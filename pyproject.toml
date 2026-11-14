@@ -1,0 +1,21 @@
+[project]
+name = "nemeq-core"
+version = "0.1.0"
+description = "Libbu — deterministic kernel of Nemeq OS. Six primitives, nothing else."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+authors = [{ name = "Nemeq Project" }]
+keywords = ["nemeq", "libbu", "kernel", "agents", "deterministic"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Operating System :: POSIX :: Linux",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5"]
+
+[tool.pytest.ini_options]
+testpaths = ["kernel", "agents"]
+addopts = "-q"
