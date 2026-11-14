@@ -1,0 +1,30 @@
+# Nemeq Riksu manifest (PoC, wave 2).
+#
+# init reads [agents] in declaration order and spawns each agent as a child.
+# reu watches the agents with watch=true (init and reu are never watched).
+# capd grants are runtime state and are not seeded from this file.
+
+[runtime]
+run_dir = "run"
+
+[agents.reu]
+module = "agents/reu.py"
+args = ["run"]
+watch = false
+
+[agents.adannu]
+module = "agents/adannu.py"
+args = ["run"]
+watch = true
+
+[agents.capd]
+module = "agents/capd.py"
+args = ["run"]
+watch = true
+
+[schedule]
+interval = 1.0
+event = "sleep_requested"
+
+[capabilities]
+known = ["tool:nd", "tool:echo", "sleep:requested"]
