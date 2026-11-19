@@ -1,119 +1,144 @@
 <mxfile host="app.diagrams.net" modified="2026-11-19T00:00:00.000Z" agent="versta" version="24.0.0" type="device">
-  <diagram id="layers" name="1 · Слои и классы">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="900" math="0" shadow="0">
+  <diagram id="layers-v2" name="1 · Слои (снизу вверх)">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1250" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="l1" value="1 · ЖЕЛЕЗО&#10;CPU · RAM · NVMe · GPU · сеть" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8e8e8;strokeColor=#666666;fontStyle=1;fontSize=14;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="30" width="1120" height="70" as="geometry" />
+        <mxCell id="app" value="5 · ПРИКЛАД / КЛИЕНТ&#10;сессии · CLI · HTTP API · дашборд · задачи владельца&#10;клиент видит awilu и сессии; subur и libbu клиенту не адресуемы" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f0ff;strokeColor=#5b3fa8;fontSize=14;fontStyle=1;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1060" height="85" as="geometry" />
         </mxCell>
 
-        <mxCell id="l2" value="2 · ОС LINUX&#10;ядро · systemd · cgroups v2 · namespaces · pidfd · seccomp · LSM&#10;граница LXD-контейнера" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbe9f7;strokeColor=#1f5c99;fontStyle=1;fontSize=14;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="115" width="1120" height="85" as="geometry" />
+        <mxCell id="core" value="4 · NEMEQ-CORE — harness (логическая ОС для агентов)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9ef;strokeColor=#b26a00;fontSize=17;fontStyle=1;verticalAlign=top;spacingTop=8;align=left;spacingLeft=12;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="40" y="155" width="1060" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="kalam" value="Kalam (realm) — инстанс nemeq-core на одной ОС · libbu.slice/kalam-&lt;id&gt;.slice" style="text;html=1;fontSize=12;align=left;fontColor=#8a5a00;" vertex="1" parent="1">
+          <mxGeometry x="56" y="190" width="900" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="l3" value="3 · RUNTIME&#10;сейчас: Python + asyncio   →   в будущем: Rust + async executor&#10;runtime adapter: PythonRuntime → RustRuntime (оркестрация не меняется)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontStyle=1;fontSize=14;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="215" width="1120" height="80" as="geometry" />
+        <mxCell id="awilu" value="AWILU — пользовательские агенты (аналог пользовательских процессов)&#10;anima + body + Tush · incarnations_count · days_count · zikru · сон · смерть · продажа .anima&#10;ОС: 0 процессов в dead/sleeping; в running — 1 основной + 0..N дочерних&#10;cgroup: kalam-&lt;id&gt;/awilu/incarnation-&lt;id&gt;   ·   unit: incarnation-&lt;id&gt;.service (generation N)&#10;получает сессию от приклада, права — qatum от capd" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="215" width="1020" height="125" as="geometry" />
         </mxCell>
 
-        <mxCell id="l4" value="4 · LIBBU + SUBUR  (аналог systemd)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#b26a00;fontStyle=1;fontSize=15;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
-          <mxGeometry x="40" y="310" width="1120" height="330" as="geometry" />
+        <mxCell id="subur" value="SUBUR — системные агенты (аналог systemd)&#10;init (supervision) · reu (watchdog) · adannu (расписание) · capd (capability broker) · massaru (жизненный цикл)&#10;himem · nd · tabled · kittu · consolidate · llm-gateway (единственный выход к моделям)&#10;ОС: 1 процесс на сервис (workers допустимы) · cgroup: kalam-&lt;id&gt;/subur/&lt;service&gt;&#10;нет anima и zikru, есть service identity; клиенту не адресуемы" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe9c7;strokeColor=#8a5a00;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="355" width="1020" height="135" as="geometry" />
         </mxCell>
 
-        <mxCell id="kalam" value="Kalam (Realm) — инстанс Libbu на одной ОС&#10;libbu.slice/kalam-&lt;id&gt;.slice   ·   namespace · квоты · аудит" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffdf5;strokeColor=#b26a00;dashed=1;fontSize=12;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
-          <mxGeometry x="70" y="345" width="1060" height="275" as="geometry" />
+        <mxCell id="libbu" value="LIBBU — ядро (код, не агент) и его процессы&#10;6 примитивов: session loop · context RAM · dispatch · capability check · spawn/reap · supervise&#10;знает только процессы и сессии; про anima, инкарнации, сон и смерть не знает&#10;ОС: libbu-core — 1..N процессов · cgroup: kalam-&lt;id&gt;/libbu" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f2f2;strokeColor=#555555;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="505" width="1020" height="105" as="geometry" />
         </mxCell>
 
-        <mxCell id="subur" value="subur.slice" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe9c7;strokeColor=#b26a00;fontStyle=1;fontSize=12;verticalAlign=top;" vertex="1" parent="1">
-          <mxGeometry x="95" y="385" width="380" height="215" as="geometry" />
+        <mxCell id="boot" value="BOOTSTRAP — launcher/supervisor (вне классов агентов)&#10;запускает и перезапускает libbu и subur; сам не Epishu — иначе самовыдача прав и «кто перезапустит перезапускателя»" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;dashed=1;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="625" width="1020" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="init" value="init&#10;1 процесс&#10;supervision, реконсиляция" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8a5a00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="115" y="415" width="150" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="capd" value="capd&#10;1 процесс&#10;broker capability, отдельный" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8a5a00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="285" y="415" width="170" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="massaru" value="massaru&#10;1 процесс (+workers)&#10;наблюдение, аудит" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#8a5a00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="115" y="505" width="160" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="boot" value="bootstrap (вне классов)&#10;launcher / supervisor: запускает и перезапускает Subur" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f2f2;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="295" y="505" width="165" height="70" as="geometry" />
+        <mxCell id="pyr" value="Пирамида: libbu (ядро + процессы) → subur (системные) → awilu (пользовательские). Каждый элемент — процесс Linux; внутри Kalam — одно дерево cgroup." style="text;html=1;fontSize=12;align=left;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="56" y="705" width="1020" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="awilu" value="awilu.slice" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontStyle=1;fontSize=12;verticalAlign=top;" vertex="1" parent="1">
-          <mxGeometry x="500" y="385" width="610" height="215" as="geometry" />
+        <mxCell id="runtime" value="3 · RUNTIME" style="text;html=1;fontSize=15;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="810" width="200" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="inc1" value="incarnation-&lt;id&gt;.service   (generation 1)&#10;leaf-cgroup · limits ДО exec&#10;main process: Awilu" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1a4d8f;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="520" y="415" width="270" height="75" as="geometry" />
+        <mxCell id="py" value="3a · PYTHON (сейчас)&#10;CPython + asyncio. Код libbu, subur и awilu исполняется в интерпретаторе.&#10;Процесс интерпретатора = процесс Linux. GIL ограничивает только внутри своего процесса." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="835" width="680" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="inc2" value="incarnation-&lt;id&gt;.service   (generation 2)&#10;после рестарта — новый epoch" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1a4d8f;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="810" y="415" width="280" height="75" as="geometry" />
-        </mxCell>
-        <mxCell id="kids" value="дочерние процессы 0..N (инструменты, изолированные исполнители) — в том же leaf-cgroup" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9ff;strokeColor=#1a4d8f;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="520" y="505" width="570" height="70" as="geometry" />
+        <mxCell id="rs" value="3b · RUST (план)&#10;tokio/async. Те же контракты: IPC, state machine, capability.&#10;Меняется адаптер рантайма и формат checkpoint." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eef7ee;strokeColor=#2e7d32;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="835" width="360" height="95" as="geometry" />
         </mxCell>
 
-        <mxCell id="l5" value="5 · AWILU — целевые агенты&#10;anima (переносимый пакет) → 0..N инкарнаций → 0..N generation → 1 cgroup/unit → 0..N процессов ОС&#10;сон · смерть · продажа .anima · zikru · days_count" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eef3fb;strokeColor=#1a4d8f;fontStyle=1;fontSize=14;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="660" width="1120" height="90" as="geometry" />
+        <mxCell id="linux" value="2 · ОС LINUX — где физически живут процессы&#10;systemd (transient .service) · cgroups v2 (квоты, счёт) · namespaces · pidfd · seccomp · LSM&#10;&#10;cgroup: libbu.slice/ kalam-&lt;id&gt;.slice/ { libbu/ · subur/&lt;service&gt;/ · awilu/incarnation-&lt;id&gt;/ }&#10;запуск: transient .service с ExecStart (лимиты ДО exec) ИЛИ Delegate=yes + clone3(CLONE_INTO_CGROUP)&#10;PID не идентичность: идентичность = UUID + generation + cgroup" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbe9f7;strokeColor=#1f5c99;fontSize=13;verticalAlign=top;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="950" width="1060" height="150" as="geometry" />
         </mxCell>
 
-        <mxCell id="legend" value="Epishu = любой агент → Subur (служебный) | Awilu (целевой). PID — не идентичность: идентичность = UUID + generation + cgroup." style="text;html=1;fontSize=12;align=left;" vertex="1" parent="1">
-          <mxGeometry x="40" y="765" width="1120" height="40" as="geometry" />
+        <mxCell id="hw" value="1 · ЖЕЛЕЗО — CPU · RAM · NVMe · GPU (12 ГБ) · сеть" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ececec;strokeColor=#444444;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1120" width="1060" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#5b3fa8;strokeWidth=2;" edge="1" parent="1" source="app" target="core">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b26a00;strokeWidth=2;" edge="1" parent="1" source="core" target="py">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d32;strokeWidth=2;" edge="1" parent="1" source="py" target="linux">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1f5c99;strokeWidth=2;" edge="1" parent="1" source="linux" target="hw">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
-  <diagram id="lifecycle" name="2 · Процессы, сон, fencing">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="900" math="0" shadow="0">
+
+  <diagram id="llm-lifecycle" name="2 · LLM и жизненный цикл">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="950" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="chain" value="anima  →  0..N инкарнаций  →  0..N generation  →  1 systemd unit + 1 leaf-cgroup  →  0..N процессов ОС" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eef3fb;strokeColor=#1a4d8f;fontSize=14;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="30" width="1120" height="60" as="geometry" />
+        <mxCell id="t1" value="Путь к LLM: агент не зовёт модель напрямую" style="text;html=1;fontSize=17;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="600" height="24" as="geometry" />
         </mxCell>
 
-        <mxCell id="st_dormant" value="dormant&#10;0 процессов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="60" y="140" width="150" height="60" as="geometry" />
+        <mxCell id="aw" value="Awilu (процесс агента)&#10;хочет сгенерировать текст" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="220" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_start" value="starting&#10;unit создан, limits до exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#b26a00;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="250" y="140" width="180" height="60" as="geometry" />
+        <mxCell id="capd" value="capd (Subur)&#10;проверка qatum&#10;право llm.call, квота" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe9c7;strokeColor=#8a5a00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="310" y="70" width="200" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_run" value="running&#10;1 main + 0..N children" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="470" y="140" width="180" height="60" as="geometry" />
+        <mxCell id="gw" value="llm-gateway (Subur)&#10;маршрутизация · аудит · ключи только здесь" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="560" y="70" width="260" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="st_sleep" value="sleeping&#10;checkpoint, cgroup пуст, unit удалён" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="690" y="140" width="220" height="60" as="geometry" />
+        <mxCell id="llama" value="llama.cpp server&#10;GGUF на GPU · 127.0.0.1:8080" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="870" y="40" width="230" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="st_dead" value="dead&#10;0 процессов, epoch fenced" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdecea;strokeColor=#b71c1c;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="950" y="140" width="190" height="60" as="geometry" />
+        <mxCell id="ext" value="внешний API&#10;только по политике" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="870" y="115" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1a4d8f;strokeWidth=2;" edge="1" parent="1" source="aw" target="capd"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8a5a00;strokeWidth=2;" edge="1" parent="1" source="capd" target="gw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9d2f6f;strokeWidth=2;" edge="1" parent="1" source="gw" target="llama"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9d2f6f;strokeWidth=2;" edge="1" parent="1" source="gw" target="ext"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="forbid" value="Запрещено: прямой вызов модели из Awilu, ключи в процессе агента, собственный HTTP-клиент в обход gateway." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecea;strokeColor=#b71c1c;fontSize=13;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="1060" height="45" as="geometry" />
         </mxCell>
 
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="st_dormant" target="st_start"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="st_start" target="st_run"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="st_run" target="st_sleep"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="st_run" target="st_dead"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" edge="1" parent="1" source="st_sleep" target="st_start"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="t2" value="Жизненный цикл и fencing" style="text;html=1;fontSize=17;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="265" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="dormant&#10;0 процессов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="310" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="starting&#10;unit создан, лимиты до exec" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#b26a00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="230" y="310" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="running&#10;1 main + 0..N children" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="470" y="310" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="sleeping&#10;checkpoint · cgroup пуст" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="710" y="310" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="dead&#10;epoch fenced" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdecea;strokeColor=#b71c1c;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="950" y="310" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="l2" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="l3" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="l4" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="s3" target="s5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="l5" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" edge="1" parent="1" source="s4" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
 
-        <mxCell id="fence" value="ПОРЯДОК FENCING (жёсткий)&#10;1. durable bump epoch&#10;2. cgroup.kill по leaf-cgroup&#10;3. ждать cgroup.events: populated=0&#10;4. смена владельца / состояния&#10;5. новая generation при следующем запуске" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8f0;strokeColor=#b71c1c;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="270" width="520" height="180" as="geometry" />
+        <mxCell id="fence" value="ПОРЯДОК FENCING&#10;1. durable bump epoch&#10;2. cgroup.kill по leaf-cgroup&#10;3. ждать cgroup.events: populated=0&#10;4. смена владельца / состояния&#10;5. новая generation при следующем запуске" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8f0;strokeColor=#b71c1c;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="410" width="520" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="sale" value="ПРОДАЖА .anima&#10;quiesce → fence → отзыв qatum → смена владельца → новая generation&#10;.anima — переносимый артефакт, НЕ действующая авторизация&#10;внешние эффекты: idempotency-ключ, привязанный к epoch" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9ff;strokeColor=#1a4d8f;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="600" y="410" width="500" height="160" as="geometry" />
         </mxCell>
 
-        <mxCell id="sale" value="ПРОДАЖА .anima&#10;quiesce → fence → отзыв qatum → смена владельца → новая generation&#10;.anima = переносимый артефакт, НЕ действующая авторизация" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9ff;strokeColor=#1a4d8f;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="620" y="270" width="540" height="180" as="geometry" />
+        <mxCell id="spawn" value="ЗАПУСК&#10;.scope создаётся для уже работающего процесса → окно без лимитов и возможный fork вне инкарнации.&#10;Поэтому: transient .service с ExecStart (лимиты до exec) ИЛИ Delegate=yes + clone3(CLONE_INTO_CGROUP)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#b26a00;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="520" height="110" as="geometry" />
         </mxCell>
-
-        <mxCell id="spawn" value="ЗАПУСК (критика Opus)&#10;.scope создаётся для уже работающего процесса → окно без лимитов и возможный fork вне инкарнации.&#10;Поэтому: transient .service с ExecStart (лимиты до exec)&#10;ИЛИ Delegate=yes + clone3(CLONE_INTO_CGROUP). Смешивать нельзя." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#b26a00;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="480" width="520" height="150" as="geometry" />
-        </mxCell>
-
-        <mxCell id="py" value="PYTHON → RUST (что не меняется)&#10;kalam_id · anima_id · incarnation_id · generation&#10;дерево cgroup · state machine · capability-модель&#10;формат аудита · IPC · правила сна и смерти" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="620" y="480" width="540" height="150" as="geometry" />
-        </mxCell>
-
-        <mxCell id="inv" value="ИНВАРИАНТЫ&#10;1. процесс ∈ ровно один leaf-cgroup одного Kalam; Awilu — ровно одна incarnation+generation&#10;2. PID ≠ идентичность&#10;3. ограничения применяются ДО exec&#10;4. граница capability не слабее границы отказа&#10;5. sleeping/dead ⇒ пустой cgroup; running с пустым cgroup = отказ&#10;6. запуск только через systemd .service или clone3 в делегированную cgroup&#10;7. epoch durable-bump ДО kill; idempotency привязана к epoch&#10;8. в API Libbu нет доменных слов harness (проверка в CI)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f9f9f9;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="660" width="1100" height="190" as="geometry" />
+        <mxCell id="py2" value="PYTHON → RUST&#10;не меняется: kalam_id · anima_id · incarnation_id · generation · дерево cgroup · state machine · capability · аудит · IPC" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f4ea;strokeColor=#2e7d32;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="600" y="600" width="500" height="110" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

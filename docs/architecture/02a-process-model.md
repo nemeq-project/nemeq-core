@@ -19,6 +19,38 @@
 
 ---
 
+
+### Схема (псевдографика)
+
+```
+5  ПРИКЛАД      сессии · CLI · HTTP API · дашборд
+       │ сессия
+4  NEMEQ-CORE  ┌────────────────────────────────────────────────┐
+   (harness)   │ AWILU   anima+body+tush → 1 процесс + 0..N     │
+               │ SUBUR   init·reu·adannu·capd·massaru·llm-gateway│
+               │ LIBBU   ядро + процессы (loop·dispatch·spawn)   │
+               │ BOOTSTRAP — вне классов агентов                 │
+               └────────────────────────────────────────────────┘
+       │ каждый элемент пирамиды = процесс Linux (cgroup)
+3  RUNTIME     [ Python + asyncio — сейчас ]   [ Rust — план ]
+       │
+2  LINUX       systemd · cgroups v2 · namespaces · pidfd · seccomp · LSM
+               libbu.slice/kalam-<id>/{libbu, subur/<svc>, awilu/incarnation-<id>}
+       │
+1  ЖЕЛЕЗО      CPU · RAM · NVMe · GPU · сеть
+```
+
+### Путь к LLM
+
+```
+Awilu ──qatum llm.call──▶ capd ──grant──▶ llm-gateway ──▶ llama.cpp (GPU, локально)
+   (процесс агента)        (Subur)          (Subur)    └──▶ внешний API (по политике)
+```
+
+Агент **не вызывает модель напрямую**: он просит право `llm.call` у `capd`, `llm-gateway` проверяет `qatum`, считает квоту и пишет аудит. Ключи и адреса моделей не попадают в процесс Awilu. Прямой HTTP-клиент в обход gateway — нарушение.
+
+---
+
 ## 2. Kalam (Realm): инстанс Libbu на одной ОС
 
 **Kalam** (шумер. «страна, земля») — инстанс Libbu, работающий в рамках одной ОС.
