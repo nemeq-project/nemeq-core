@@ -117,6 +117,57 @@ anima 1 ── 0..N incarnation 1 ── 0..N generation 1 ── 1 cgroup/unit 
 
 ---
 
+
+### 4a. Адресное пространство: как nemeq ложится на Linux
+
+| Nemeq | Linux |
+|---|---|
+| Инкарнация Awilu | **TGID + отдельный `mm_struct`**; все потоки инкарнации делят это адресное пространство |
+| Дочерний процесс агента | `fork()`/`clone()` без `CLONE_VM` → **свой `mm_struct`**, страницы сначала общие через COW |
+| Права (capability) | принадлежат задаче/процессу, **не** отдельному потоку и не «агенту» как логической сущности |
+| Лимит памяти | `memory.max` в cgroup считает **charged**-память (anon, page cache/shmem, page tables, kernel), а не размер виртуального пространства |
+
+**Где что лежит в адресном пространстве:**
+
+| Объект | Размещение |
+|---|---|
+| Код `libbu` | `libbu.so` → file-backed `r-xp` VMA |
+| Константы, шаблоны промптов | ELF `rodata`, `r--p` |
+| Глобальные данные процесса | ELF `data/bss`, `rw-p` |
+| Состояние сессии | `[heap]` или anonymous `mmap`, `rw-p` |
+| Context RAM (крупные буферы) | anonymous `mmap` или `memfd`/shm, `rw-s`/`r--s` |
+| Стек основного потока | `[stack]` |
+| LLM-клиент, HTTP/TLS/JSON буферы | text/rodata + heap |
+| Токены и ключи | **не должны** находиться в памяти Awilu (см. §5a) |
+| Socket-буферы | **не VMA**: память ядра, видна в `memory.stat:sock` |
+
+**Передача больших данных libbu ↔ агент:** `memfd_create(MFD_ALLOW_SEALING)` → `ftruncate` → `mmap`/запись → **seals** (`F_SEAL_SHRINK|GROW|WRITE|SEAL`) → `SCM_RIGHTS` по `AF_UNIX SOCK_SEQPACKET` → получатель делает `mmap(PROT_READ, MAP_SHARED)`. На сокете обязательна проверка `SO_PEERCRED`. Получатель проверяет `fstat` (тип, размер, inode), `F_GET_SEALS`, ожидаемую длину и хеш. `pipe` и обычный socket — только для мелких сообщений.
+
+**Аудит «агент → процесс → адресное пространство»:**
+
+```
+1. pidfd_open(pid)           — устойчивый handle
+2. /proc/<pid>/stat          — поле 22 starttime (защита от переиспользования PID)
+3. /proc/<pid>/status        — Tgid, Pid, NStgid/NSpid, CapEff, NoNewPrivs, Seccomp
+4. /proc/<pid>/cgroup        — ожидается 0::/kalam-<id>/awilu/incarnation-<id>
+5. /proc/<pid>/ns/*          — inode-ы pid/user/mnt/net/cgroup
+6. /proc/<pid>/exe + hash    — доказательство исполняемого кода
+7. /proc/<pid>/maps, smaps_rollup — VMA (start-end, perms, pathname, Rss/Pss)
+8. /proc/<pid>/fd, fdinfo    — pipe:[inode], socket:[inode]
+9. kcmp(pid1, pid2, KCMP_VM) — 0 = общий mm_struct (запрещено), иначе разные
+```
+
+`maps`/`smaps` читаются одним полным чтением (иначе гонка с изменениями VMA). `kcmp` вызывать на замороженной инкарнации.
+
+**Инварианты адресного пространства:**
+
+1. Одна инкарнация — один `mm_struct`; потоки делят его, отдельные агенты — никогда (`kcmp(KCMP_VM) ≠ 0`).
+2. Процесс запускается **в целевом cgroup до** загрузки контекста и крупных буферов (иначе страницы останутся начислены старой cgroup).
+3. Крупные передаваемые буферы — `memfd` с seals и `SCM_RIGHTS`; получатель монтирует только `PROT_READ`.
+4. Агент не видит VMA другого агента; доказательство — отсутствие общих file-backed shared VMA и `kcmp ≠ 0`.
+
+---
+
 ## 5. Жизненный цикл и fencing
 
 **Состояния:** `dormant → starting → running → sleeping → dead`, плюс `migrating`.
@@ -136,6 +187,64 @@ anima 1 ── 0..N incarnation 1 ── 0..N generation 1 ── 1 cgroup/unit 
 **Сон** — не `SIGSTOP`: checkpoint записан, процессы остановлены, leaf-cgroup пуст, systemd-юнита нет. При пробуждении capability **перепроверяются**, а не продолжаются.
 
 **Продажа `.anima`:** quiesce → fence → отзыв qatum → смена владельца → новая generation. `.anima` — переносимый артефакт и **не действующая авторизация**.
+
+---
+
+
+### 5a. Доступ к LLM: Subur — один endpoint на Kalam, Awilu — свой
+
+**Subur (служебные): один логический endpoint на Kalam.**
+
+```
+Subur → kalam-llm (VIP/service) → 2–3 stateless реплики Kalam-LLM → провайдеры
+```
+
+Один логический endpoint даёт: единую политику (разрешённые модели, лимиты контекста), иерархические квоты `installation → subsystem → agent → incarnation`, аудит, ротацию ключей, circuit breaker и нормализацию разных API. Отказоустойчивость — 2–3 stateless-реплики за VIP, локальный unix-socket для Subur, HA-хранилище квот и append-only аудит с локальным буфером.
+
+**`capd` в data path не стоит**: он выдаёт и отзывает права, но каждый LLM-запрос через него не проходит.
+
+**Awilu (пользовательские): каждый может иметь свой endpoint.**
+
+```
+Awilu ──(unix socket + lease)──▶ awilu-egress ──(провайдерский ключ)──▶ endpoint_A
+                                  (другой UID, cgroup, netns)
+```
+
+- `capd` выдаёт **lease**: `lease_id`, `incarnation_id`, `endpoint_id`, `models`, `aud`, `epoch`, `not_before/expires_at`, `max_input_tokens`, `max_output_tokens`, `max_requests`, `concurrency`. Lease подписан и привязан к epoch.
+- **Ключ провайдера никогда не попадает в адресное пространство Awilu.** Его держит `awilu-egress` — отдельный процесс под другим UID/cgroup и, желательно, в отдельном network namespace. Агент получает только путь к unix-socket и lease.
+- **Egress default deny:** агенту разрешён `AF_UNIX`; `AF_INET/AF_INET6` закрыт; egress-прокси разрешает только заданные destination; дополнительно cgroup-BPF `connect4/connect6` и LXD ACL.
+
+Причина жёсткости: если агент сам открывает HTTPS с bearer-токеном, **токен неизбежно окажется в его памяти** хотя бы на время запроса, а DPoP/mTLS не спасает от кода внутри того же процесса.
+
+**Сравнение вариантов:**
+
+| Вариант | Плюсы | Минусы | Вердикт |
+|---|---|---|---|
+| А. Все через общий gateway | максимум аудита, простые квоты и ротация | общий blast radius, задержка, сложнее нестандартные API | для Subur |
+| Б. Awilu напрямую с токеном | минимальная задержка | токен в памяти агента, слабее квоты | только особая политика |
+| **В. Гибрид** | централизованный Subur + индивидуальные маршруты Awilu | два data-plane режима, нужен общий lease-протокол | **выбран** |
+
+**Учёт токенов и квоты (три уровня):**
+
+1. `Kalam-LLM` / `awilu-egress` — оперативный authoritative counter: reservation до запроса (`input_estimate + max_output`), стриминговый подсчёт, немедленный `cancel` при hard limit.
+2. Провайдер — сверка фактического расхода (включая cached/reasoning), не годится для мгновенного enforcement.
+3. Сетевой egress — контроль аномалий (байты, соединения, destinations).
+
+**Отказы:**
+
+| Сценарий | Поведение |
+|---|---|
+| Endpoint недоступен | retry с backoff + circuit breaker; инкарнация живёт, задача помечается `blocked` |
+| Lease отозван / истёк | 401/403 на прокси; агент получает `TOOL_FAIL`, эскалация в Subur |
+| Квота исчерпана | hard stop до запроса; состояние `quota_exhausted`, сон/эскалация |
+| Ключ скомпрометирован | ротация ключа в egress, инвалидация lease по epoch, fence инкарнации при необходимости |
+
+**Инварианты LLM-доступа:**
+
+1. В памяти процесса Awilu нет провайдерских ключей: проверка — отсутствие секретов в `/proc/<pid>/environ`, `maps` и heap-дампах, плюс egress default deny.
+2. Любой вызов модели у Awilu идёт через lease, привязанный к `incarnation_epoch`; после fence старый lease не действует.
+3. У Subur ровно один логический endpoint на Kalam; у Awilu — свой маршрут/аккаунт/модель, но не обязательно свой ключ.
+4. Квоты считаются до запроса (reservation), а не после; иначе hard limit не работает.
 
 ---
 

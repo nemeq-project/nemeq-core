@@ -143,4 +143,65 @@
       </root>
     </mxGraphModel>
   </diagram>
+  <diagram id="llm-addr" name="3 · LLM и адресное пространство">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t1" value="LLM: два режима доступа" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="500" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="subur" value="Subur (системные агенты)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe9c7;strokeColor=#8a5a00;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="endpoint" value="ОДИН endpoint на Kalam: kalam-llm&#10;2–3 stateless реплики за VIP&#10;политика моделей · иерархические квоты · аудит · ротация ключей" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="330" y="55" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="prov" value="провайдеры моделей&#10;(локальный llama.cpp / внешние API)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="55" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="es1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8a5a00;strokeWidth=2;" edge="1" parent="1" source="subur" target="endpoint"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="es2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9d2f6f;strokeWidth=2;" edge="1" parent="1" source="endpoint" target="prov"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="aw" value="Awilu (пользовательский агент)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#1a4d8f;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="capd" value="capd: подписывает lease" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe9c7;strokeColor=#8a5a00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="330" y="175" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lease" value="lease: endpoint_id · models · aud · epoch&#10;max_tokens · max_requests · expires_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1a4d8f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="570" y="165" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="eg" value="awilu-egress (ключ только здесь)&#10;другой UID · свой cgroup · отдельный netns&#10;добавляет Authorization · квоты · cancel" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="330" y="285" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="own" value="свой endpoint агента&#10;(провайдер A / B, модель, аккаунт)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#9d2f6f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="285" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1a4d8f;strokeWidth=2;" edge="1" parent="1" source="aw" target="capd"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ea2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1a4d8f;strokeWidth=2;" edge="1" parent="1" source="capd" target="lease"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ea3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9d2f6f;strokeWidth=2;" edge="1" parent="1" source="lease" target="eg"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ea4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9d2f6f;strokeWidth=2;" edge="1" parent="1" source="eg" target="own"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="deny" value="egress default deny: агенту разрешён AF_UNIX, AF_INET закрыт (cgroup-BPF connect4/6 + LXD ACL). Ключ провайдера не попадает в адресное пространство Awilu." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecea;strokeColor=#b71c1c;fontSize=13;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="395" width="1080" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t2" value="Адресное пространство одной инкарнации (TGID + один mm_struct)" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="700" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="seg" value="▸ text: libbu.so, LLM-клиент — r-xp (file-backed)&#10;▸ rodata: константы, шаблоны промптов — r--p&#10;▸ data/bss: глобальные данные — rw-p&#10;▸ [heap] + anon mmap: сессия, context RAM — rw-p&#10;▸ memfd (shm): обмен с libbu — rw-s + seals + SCM_RIGHTS&#10;▸ [stack] основного потока — rw-p&#10;▸ socket-буферы — не VMA, memory.stat:sock" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5fbff;strokeColor=#1f5c99;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="515" width="600" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" value="Аудит привязки:&#10;pidfd + /proc/&lt;pid&gt;/stat:starttime&#10;/proc/&lt;pid&gt;/status: Tgid, CapEff, Seccomp&#10;/proc/&lt;pid&gt;/cgroup · ns/* · exe+hash&#10;/proc/&lt;pid&gt;/maps · smaps_rollup · fd&#10;kcmp(pidA, pidB, KCMP_VM) = 0 запрещено (общий mm)&#10;memory.max считает charged, а не виртуальный размер" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f5c99;fontSize=13;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="670" y="515" width="450" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="kinv" value="Инварианты: 1) одна инкарнация = один mm_struct, агенты не делят mm; 2) процесс входит в целевой cgroup ДО загрузки контекста; 3) крупные буферы — memfd с seals и SCM_RIGHTS, получатель PROT_READ; 4) агент не видит VMA другого агента." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f9f9f9;strokeColor=#666666;fontSize=13;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="715" width="1080" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
 </mxfile>
