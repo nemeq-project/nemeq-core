@@ -429,3 +429,65 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-63 | Read gate: root data-plane no sealed/raw; ptrace/fd denied |
 | TB-64 | Audit forgery by subject fails; 2-party down → deny |
 | TB-65 | Quorum/KMS split-brain |
+
+
+## 15. v1-rc6: sink taxonomy, restore state machine, key purpose, default-deny
+
+### 15.1. Классы sink (обязательны)
+- **T** — транзакционный: side effect + `INSERT effect_id` в одной транзакции.
+- **I** — внешний с idempotency key: `effect_id` + `payload_hash` передаются получателю; у получателя есть `lookup`; дедуп на его стороне.
+- **N** — неидемпотентный: at-most-once; любой crash после dispatch → `unknown` → `needs_reconciliation`; автоповтор запрещён.
+- Sink без `sink_class` не регистрируется. `supersede` — новый `effect_id` + tombstone старого; payload под ключом неизменяем.
+
+### 15.2. step_id и replan
+- `step_id` фиксируется в журнале **до dispatch** (journal-before-dispatch).
+- Recovery берёт решения из журнала; replan создаёт новый step с явным `supersede`, старый — `unknown`/`cancelled`; дубль эффекта запрещён.
+- `step_id` — детерминированный путь + индекс итерации; кодировка length-prefixed.
+
+### 15.3. Ключ и статус
+- `effect_id = H(domain || purpose || key_version || len(session_id)||session_id || len(step_id)||step_id)`; purpose/version разделяют контексты; HKDF-Expand от корневого ключа.
+- `effect_id` **без epoch**; epoch — fencing; статус ключа терминальный: `applied | burned | unknown`.
+- Restore: окно после checkpoint → `unknown`; nonce **предрезервированы**; повтор ключа не применяет второй эффект.
+
+### 15.4. Restore state machine
+`restored → fenced → reconciling → promotable`.
+- `restored`: gate закрыт, dispatch запрещён.
+- `fenced`: KMS epoch/lease; CAS epoch+1; minority read-only.
+- `reconciling`: окно unknown разбирается (журнал/получатель/оператор), evidence bundle.
+- `promotable`: checkpoint совпал с KMS, окно закрыто; только тогда gate открыт.
+- Sink-таблицы (`effect_id`) входят в hwm/checkpoint.
+
+### 15.5. Read gate default-deny
+- seccomp/LSM **allowlist** (default-deny); запрет ptrace, `/proc/pid/mem`, coredump, SCM_RIGHTS, memfd/pidfd, io_uring, splice.
+- Backup — отдельный uid, шифрованный snapshot под отдельным ключом, без plaintext.
+- Broker — capability attenuation; каждое чтение sealed/raw аудируется.
+
+### 15.6. Audit и DSAR
+- Цепь по `H(ciphertext || key_id)`; асимметричная подпись auditor + внешний якорь (KMS/WORM).
+- DSAR: tombstone с подписью auditor в цепь; shred только payload/linkage; chain верифицируется после.
+- `k_subject` — linkage-ключ; ротация/компрометация — процедура.
+
+### 15.7. Quorum/lease
+- KMS-issued lease/epoch; запись 2-of-3 + KMS CAS; promote только при валидном lease; KMS timeout → fail-closed; minority read-only.
+
+| ID | Требование |
+|---|---|
+| RB-74 | sink_class T/I/N; без класса не регистрируется |
+| RB-75 | journal-before-dispatch; replan supersede |
+| RB-76 | effect_id без epoch + purpose/version; статус applied/burned/unknown |
+| RB-77 | restore state machine restored→fenced→reconciling→promotable |
+| RB-78 | nonce предрезерв; sink-таблицы в hwm |
+| RB-79 | read gate default-deny allowlist; backup uid/snapshot |
+| RB-80 | audit chain ciphertext/key_id + auditor signature; DSAR tombstone |
+| RB-81 | KMS lease/epoch; 2-of-3 CAS; minority read-only |
+
+| ID | Тест |
+|---|---|
+| TB-66 | sink T/I/N crash-тесты; N → unknown |
+| TB-67 | replan: старый step unknown, новый effect, без дубля |
+| TB-68 | key purpose/version KAT; no epoch |
+| TB-69 | restore state machine: promote только после reconcile |
+| TB-70 | nonce pre-reserve; restore nonce used |
+| TB-71 | read gate: io_uring/splice/pidfd/backup denied |
+| TB-72 | DSAR shred: chain verifies, payload gone |
+| TB-73 | quorum/KMS lease: no two leaders; outage fail-closed |
