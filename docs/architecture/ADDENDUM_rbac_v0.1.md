@@ -245,3 +245,62 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-40 | k: 3 записи одного principal → 1 голос; replay/nonce |
 | TB-41 | Isolation: netns/cgroup, quotas, нет cross-talk |
 | TB-42 | Versioning/retention/epoch fencing |
+
+
+## 12. v1-rc3: механизмы delta-review
+
+### 12.1. Read gate enforcement
+- Данные памяти принадлежат отдельному uid/gid `nemeq-store`, права `0700`; читает только процесс read gate (он же владелец).
+- Агенты/tools: отдельный **mount namespace без каталогов памяти**, user namespace, seccomp без `ptrace`/`process_vm_readv`; доступ только через gate API.
+- Backup-агент читает только snapshot/read-only bind, не «живые» данные.
+- **Критерий:** из песочницы агента `open()` памяти, `/proc/<gate>/mem`, `/proc/<pid>/root` → `EACCES`/`ENOENT`.
+
+### 12.2. Tombstone-ledger
+- Hash-chain, ≥2 реплики (второй хост/зашифрованный экспорт); субъекты — хеши с солью.
+- Бэкап содержит `ledger_watermark`; restore требует `ledger.seq ≥ watermark`, иначе gate **закрыт** (fail-closed).
+- Replay **физически** удаляет данные/производные до открытия чтения; открытие — атомарный флаг.
+- Дешёвое снижение риска до F-01: шифровать бэкапы (age/gpg), ключ вне бэкап-контура.
+
+### 12.3. Audit
+- Ключ подписи checkpoints — **off-host/2-party** (HSM/внешний подписант), не на хосте root.
+- Buffer overflow — **fail-closed** (стоп записи памяти до восстановления аудита), не drop.
+- Audit хранит хэш/nonce/subject-hash, не содержимое; tombstone-события и legal hold сохраняются; purge не трогает audit-хэши.
+
+### 12.4. Classification
+- Две независимые оси: `sensitivity` (public…secret) и `audience/purpose` (кто/зачем). Не одна линейная шкала.
+- `secret` sticky; override — только owner/global admin с аудитом; `admin_epishu` не понижает secret.
+- unknown → `personal` + `subject=unknown` (purge по маркеру); NER для секретов/токенов (API keys, passwords), не только email/phone/id.
+
+### 12.5. k-support
+- Принципалы создаёт **только admin** (нет self-register); `accountable_root` сворачивает несколько учёток в один голос.
+- Минимум 3 различных principal+subject; evidence signed, nonce/TTL, replay-protection; support пересчитывается при consent/revoke.
+
+### 12.6. Sealed ACL (после отказа от crypto)
+- `sealed` = ACL/FS, не crypto; `admin_epishu` → 403; global admin (root) — прямой доступ; двух-принципальный break-glass в v1 **не вводим** (root trusted).
+- Read gate проверяет ACL и tombstone на каждом чтении.
+
+### 12.7. DSAR, raw, quotas, UI
+- DSAR — ручной экспорт/удаление global admin в v1; автоматизация — F-11.
+- raw/debug: off по умолчанию; при включении TTL 24 ч, входит в derived purge.
+- Квоты покрывают cached/uncached/output/reasoning и стоимость; per installation/epishu.
+- UI control plane — F-17 (future).
+
+| ID | Требование |
+|---|---|
+| RB-49 | uid nemeq-store 0700; агенты без mount-доступа к памяти; seccomp no ptrace |
+| RB-50 | Ledger hash-chain ≥2 реплики; watermark; restore fail-closed |
+| RB-51 | Audit key off-host/2-party; overflow fail-closed; no PII |
+| RB-52 | Classification: две оси; secret sticky; override audit; unknown subject-marker; NER secrets |
+| RB-53 | k: principals only admin; accountable_root; signed evidence nonce/TTL |
+| RB-54 | Sealed ACL: admin_epishu 403; root direct; без 2-principal |
+| RB-55 | DSAR manual; raw TTL 24h; quotas cached/uncached/output/reasoning |
+
+| ID | Тест |
+|---|---|
+| TB-43 | Песочница агента: EACCES/ENOENT к памяти и /proc gate |
+| TB-44 | Ledger отсутствует/старее watermark → restore не открывает чтение |
+| TB-45 | Audit overflow → стоп записи; signed checkpoint off-host |
+| TB-46 | Classification axes + override audit + NER secrets |
+| TB-47 | k: 3 учётки одного accountable_root → 1 голос; replay/nonce |
+| TB-48 | Sealed ACL: admin_epishu 403; root direct |
+| TB-49 | DSAR/raw TTL/quotas: cached/uncached/output/reasoning |

@@ -112,3 +112,26 @@
 | TS-17 | 100 crash-инъекций: 0 потерь/дублей; inconsistent → recovery/quarantine |
 | TS-18 | Stale sync_token → 409; старый epoch не пишет |
 | TS-19 | Preempt system в safe point, batch — aging |
+
+
+## 8. v1-rc3: таймауты, авторизация preempt, идемпотентность
+
+- `preempting` timeout (например, 30 с) → `inconsistent`; выход — WAL replay до safe point или quarantine.
+- Кто вправе вытеснять: system (Subur) — всегда; admin/admin_epishu — своих epishu; ops — только свои сессии (stop), не чужие.
+- Эффекты при replay идемпотентны по `effect_id`+`epoch`; старый epoch не пишет.
+- `epoch_fenced_counter` — атомарный CAS при reopen; 100 параллельных reopen после stale sync_token не создают дублей.
+- Context key `session_id`; после revoke/preempt старый context не читается.
+
+| ID | Требование |
+|---|---|
+| RS-23 | preempting timeout → inconsistent; recovery WAL replay/quarantine |
+| RS-24 | Права preempt: system/admin/admin_epishu/ops-own |
+| RS-25 | Идемпотентность эффектов по effect_id+epoch |
+| RS-26 | epoch_fenced_counter CAS на reopen |
+
+| ID | Тест |
+|---|---|
+| TS-20 | preempting timeout → inconsistent → recovery/quarantine |
+| TS-21 | ops не вытесняет чужую сессию; admin_epishu — свою |
+| TS-22 | replay эффектов: нет дублей; старый epoch отвергнут |
+| TS-23 | 100 параллельных reopen: нет дублей |
