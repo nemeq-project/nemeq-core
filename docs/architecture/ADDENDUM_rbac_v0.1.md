@@ -26,6 +26,7 @@
 - Аудит доступа к ПД — tamper-evident/best-effort; root может изменить файлы, поэтому «immutable от root» не заявляем.
 - Owner-ops всегда видит свой сегмент; массовая выгрузка запрещена.
 - Sealed не попадает в обычный recall/поиск и в выгрузки; 2-of-N/quorum не вводим.
+- **v1:** sealed = ACL/FS; at-rest шифрование не делаем (F-01 в feature list); root trusted — принятый риск.
 
 ## 3. zikru-zi
 
@@ -160,7 +161,7 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | RB-31 | secret всегда sealed; sensitive_personal opt-in |
 | RB-32 | k по различным owner_principal |
 | RB-33 | consent registry event-sourced + каскад |
-| RB-34 | envelope encryption: DEK/KEK, ротация, root/himem |
+| RB-34 | Crypto at rest — **future F-01** (в v1 нет; sealed = ACL/FS, root trusted) |
 | RB-35 | preemption policy (system/interactive/batch) |
 | RB-36 | ops_system scoped epishu+task, короткоживущий |
 | RB-37 | grant_check: полное объяснение только admin |
@@ -176,3 +177,14 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-32 | ops_system A не проходит в epishu B |
 | TB-33 | grant_check viewer — без структуры |
 | TB-34 | admin_epishu не читает файлы/контент sealed |
+
+
+## 10. Финальные решения 23.11
+
+- **Consent 1A:** sync tombstone в read/decrypt + async purge ≤1 ч; бэкапы — crypto-shred (F-01).
+- **Audit 2C:** root вне модели предотвращения + внешний syslog TLS hash-chain; алерт на гэп; WORM — F-06.
+- **Crypto 3 → F-01:** в v1 не делаем; sealed = ACL/FS; risk принят.
+- **Classification 4A:** класс ставит сервис, модель propose; secret не понижается; denylist; fail-closed.
+- **Sessions 5A:** safe point, state machine (active/preempting/preempted/ended), sync_token, одна на (principal, client_id); timeout kill → inconsistent.
+- **k 6A:** accountable_root + 3 различных principal+subject; evidence host/client/time.
+- Feature list: `docs/architecture/FEATURE_LIST.md`.
