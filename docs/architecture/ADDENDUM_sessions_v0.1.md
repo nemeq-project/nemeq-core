@@ -88,3 +88,27 @@
 | TS-13 | system вытесняет batch за ≤ N сек |
 | TS-14 | ops_system A не проходит в epishu B |
 | TS-15 | две активные сессии невозможны (lease) |
+
+
+## 7. v1-rc2: инвариант сессий и recovery
+
+- **Инвариант:** одна активная сессия **на epishu**; `(principal, client_id)` — адрес resume/очереди, не второй активный контекст. Два устройства одного principal стоят в очереди.
+- **State machine:** `active → preempting → preempted → ended` + `inconsistent`. Safe point = граница шага/commit.
+- **Preemption:** system — немедленно в safe point; interactive — budget; batch — aging; stop — ops/admin_epishu своего epishu.
+- **sync_token:** монотонный на epishu; stale → 409; epoch — fencing token; запись старого epoch отвергается.
+- **Timeout kill → inconsistent:** WAL replay до последнего safe point или quarantine; trace; без тихой потери/дублей.
+- **Context key:** `session_id`; после revoke/preempt старый context не читается.
+
+| ID | Требование |
+|---|---|
+| RS-19 | Одна активная на epishu; (principal,client_id) — адрес, не конкурентность |
+| RS-20 | State machine + inconsistent; recovery WAL replay/quarantine |
+| RS-21 | sync_token монотонный; epoch fencing; stale → 409 |
+| RS-22 | Safe point на границе шага/commit |
+
+| ID | Тест |
+|---|---|
+| TS-16 | Два устройства одного principal — один active, второй queued |
+| TS-17 | 100 crash-инъекций: 0 потерь/дублей; inconsistent → recovery/quarantine |
+| TS-18 | Stale sync_token → 409; старый epoch не пишет |
+| TS-19 | Preempt system в safe point, batch — aging |

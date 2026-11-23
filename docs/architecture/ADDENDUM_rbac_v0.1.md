@@ -188,3 +188,60 @@ Allow-only; `deny` — только глобальный от admin; групп�
 - **Sessions 5A:** safe point, state machine (active/preempting/preempted/ended), sync_token, одна на (principal, client_id); timeout kill → inconsistent.
 - **k 6A:** accountable_root + 3 различных principal+subject; evidence host/client/time.
 - Feature list: `docs/architecture/FEATURE_LIST.md`.
+
+
+## 11. v1-rc2: закрытие блокеров большого ревью
+
+### 11.1. Consent 1A × отсутствие crypto
+- **Read gate:** единственная точка чтения памяти (index, context store, digest, traces, claims, zikru-zi). Прямой FS-доступ сервисов запрещён правами; «decrypt» в v1 = read gate.
+- **Tombstone-ledger** хранится вне бэкапируемого набора (`/var/nemeq/state/consent/tombstones/`, отдельный бэкап).
+- **Restore:** развернуть бэкап → replay tombstone-ledger → только затем открыть read gate. Без этого сервис не стартует.
+- **Производные:** каждая запись WAL/atoms/index/claims/traces/context/zi несёт `source_ids`/subject; purge покрывает все; zikru-zi — lineage.
+- **Бэкапы до F-01:** retention (например, 30 дней) и остаточный риск зафиксированы явно; crypto-shred — F-01/F-02.
+
+### 11.2. Audit 2C
+- Локальный append-only буфер с `fsync` **до** отправки в syslog TLS.
+- Hash-chain + **signed checkpoints** (интервал, например, 5 мин) во внешний приёмник.
+- Alert на гэп/остановку экспорта; root вне модели предотвращения — явно; WORM — F-06.
+- Unwrap/read sealed — audit-событие до выдачи данных (если/когда появится crypto).
+
+### 11.3. Classification 4A
+- Precedence: `secret > sensitive_personal > personal > confidential > internal > public`; `secret` sticky.
+- Класс ставит **сервис**; модель только `propose`. Unknown → `personal` (fail-closed).
+- Denylist (email/phone/id) + NER (имена/адреса/IP); canary-корпус.
+- Понижение — только owner/global admin с аудитом; `admin_epishu` не понижает secret.
+
+### 11.4. k-support 6A
+- `accountable_root` + минимум **3 различных** principal+subject; один principal = 1 голос.
+- Evidence: `host`, `client_id`, время, nonce, подпись; TTL/nonce и replay-protection.
+- Support пересчитывается при consent/revoke; при <3 — quarantine/tombstone.
+- k=2 (Grok) отклонено.
+
+### 11.5. Изоляция, ресурсы, версионирование
+- per-epishu network namespace + cgroup v2; quotas/backpressure; pids/memory/cpu limits.
+- Image integrity: manifest + hash; IMA/dm-verity — future.
+- Versioning/migration zi/su и memory schema; retention/GC для WAL/atoms/traces/raw/context; monotonic time/epoch fencing.
+
+| ID | Требование |
+|---|---|
+| RB-39 | Read gate — единственная точка чтения; FS-обход запрещён |
+| RB-40 | Tombstone-ledger вне бэкапа; restore replay до открытия чтения |
+| RB-41 | Производные несут source_ids/subject; purge покрывает все |
+| RB-42 | Retention бэкапов и остаточный риск до F-01 зафиксированы |
+| RB-43 | Local audit buffer fsync + signed checkpoints + gap alert |
+| RB-44 | Classification precedence; secret sticky; unknown=personal |
+| RB-45 | Override класса — owner/global admin + audit |
+| RB-46 | k evidence: nonce/TTL/replay; 3 principal+subject |
+| RB-47 | per-epishu netns/cgroup v2 + quotas/backpressure |
+| RB-48 | Versioning/migration + retention/GC + time/epoch fencing |
+
+| ID | Тест |
+|---|---|
+| TB-35 | Read gate: ни один путь не читает FS в обход |
+| TB-36 | Restore: tombstone replay, удалённые не воскресают |
+| TB-37 | Purge: все производные, включая zi lineage |
+| TB-38 | Audit buffer: сеть упала → локально, потом досылка без разрыва chain |
+| TB-39 | Classification precedence + secret sticky + override audit |
+| TB-40 | k: 3 записи одного principal → 1 голос; replay/nonce |
+| TB-41 | Isolation: netns/cgroup, quotas, нет cross-talk |
+| TB-42 | Versioning/retention/epoch fencing |
