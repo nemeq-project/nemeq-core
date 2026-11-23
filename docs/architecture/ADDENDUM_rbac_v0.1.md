@@ -541,3 +541,53 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-77 | lease margin/SIGSTOP zombie reject |
 | TB-78 | restore lease loss → aborted; promote CAS |
 | TB-79 | DSAR unlink+tombstone; chain verifies; no crypto claim |
+
+
+## 17. v1-rc8: restore-tail, DSAR-ledger, sink fence matrix, epoch source
+
+### 17.1. Restore и журнал
+- `reconcile_set` включает **durable WAL tail** после снапшота; replay до последнего fsync.
+- Если tail недоступен — sink lookup по `(session_id, fence_epoch ≥ snapshot_epoch)`: I — lookup по префиксу ключа, T — запрос по epoch. Иначе — human-ack, не promote.
+- Post-snapshot dispatch не теряется: intent/dispatched в durable log.
+
+### 17.2. DSAR-ledger
+- Отдельный append-only **DSAR-ledger вне снапшотов**; restore FSM шаг `apply_dsar_ledger` до `promotable`; входит в signed report.
+- DSAR v1: unlink+tombstone; **salted HMAC/record_secret**; удаление `record_secret` криптографически уничтожает восстановление по хэшу; chain верифицируется; crypto-shred — F-02.
+
+### 17.3. Sink fence matrix
+- `fence_check: enforced | proxy | none`.
+- `none`: после смены epoch/restore **автодиспетч запрещён**; только lookup (I) или human-ack (N).
+- Все N-эффекты — через единый fenced outbox-gateway; SIGSTOP-тест с in-flight запросом.
+
+### 17.4. Epoch source
+- Новый epoch выдаёт внешний lease store; на `restored→fenced` epoch строго больше любого выданного.
+- CAS по `(restore_id, epoch)`; потеря lease из reconciling/promotable → `aborted` (терминален; повторный restore — новый restore_id).
+- Minority: read-only, **без права «not applied»**; для N-pipeline — linearizable quorum read перед intent.
+
+### 17.5. Effect FSM (полная таблица)
+`intended → dispatched → applied | not_applied | unknown → reconciled_applied | reconciled_not_applied → resolved`.
+- `dispatched` — fsync **до** вызова sink.
+- `unknown` TTL → `reconciling`; без lease — только human-ack.
+- Supersede — только из `resolved`; in-flight steps завершаются на своей `key_version`; при restore на version > текущей — fenced до ручного решения.
+- I-sink TTL = `dispatch_timeout + max_reconcile_duration + margin`, хранится с intent.
+- Orphan dispatch (sink недоступен) → `unresolved` + human-ack; автоперевод запрещён.
+
+| ID | Требование |
+|---|---|
+| RB-88 | Restore: durable WAL tail + sink lookup + human-ack |
+| RB-89 | DSAR-ledger вне снапшотов; apply до promote; salted HMAC/record_secret |
+| RB-90 | Sink fence matrix enforced/proxy/none; none no auto dispatch |
+| RB-91 | Epoch from lease store; monotonic > any; CAS (restore_id, epoch) |
+| RB-92 | Effect FSM table; dispatched fsync before sink; unknown→reconciling |
+| RB-93 | in-flight key_version; I TTL formula; orphan unresolved |
+| RB-94 | Minority no «not applied»; quorum read for N |
+
+| ID | Тест |
+|---|---|
+| TB-80 | Snapshot→dispatch→restore: tail replay/lookup, no duplicate |
+| TB-81 | Snapshot→DSAR→restore: DSAR-ledger applied, data unavailable |
+| TB-82 | Sink none + epoch change → no auto dispatch; SIGSTOP in-flight |
+| TB-83 | Epoch monotonic/CAS; aborted terminal |
+| TB-84 | FSM transitions + fsync order + unknown TTL |
+| TB-85 | Orphan dispatch → unresolved human-ack |
+| TB-86 | DSAR salted HMAC/record_secret; chain verifies |
