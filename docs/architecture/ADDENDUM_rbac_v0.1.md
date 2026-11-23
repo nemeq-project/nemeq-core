@@ -638,3 +638,51 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-90 | Quorum epoch read before intent; minority no dispatch |
 | TB-91 | FSM intended TTL; unknown→reconciling; supersede resolved |
 | TB-92 | DSAR HMAC key separate; sink erase/flag |
+
+
+## 19. v1-rc10: lease-before-reconcile, quorum-ack-before-RPC, watermark CAS
+
+### 19.1. Restore order (финальный)
+`snapshot → replay WAL tail → apply_dsar_ledger → acquire lease + CAS (restore_id, epoch) in restoring (no serving) → reconcile under new epoch → re-check ledger seq → promote (CAS: restore_id, epoch, ledger_seq)`.
+- Reconcile без захваченного epoch запрещён.
+- `promote` — один CAS по `(restore_id, epoch, ledger_seq)`; seq вырос → повторить apply/проверку, лимит попыток, затем escalation.
+- Ledger quorum недоступен → promote fail-closed.
+
+### 19.2. Dispatch и intended TTL
+- `dispatched(epoch)` фиксируется fsync + **quorum-ack до RPC**; только после этого `intended` TTL → `not_dispatched` безопасен.
+- Outbox fsync до sink; dedup key = `(record, epoch)`.
+- Crash между ack и RPC → `dispatched` (не `not_dispatched`); RPC не отправлен — reconcile.
+
+### 19.3. FSM reconciling
+- `reconciling`: retry/backoff → `unknown` или `escalated` (human); без вечного зависания.
+- Sink `none`: `reconciled_not_applied` — только human attestation с audit; иначе `unknown`.
+- `unknown → reconciling` — CAS (`from=unknown AND no active reconcile lease`); reconciler берёт short lease.
+- Supersede — только из `resolved`.
+
+### 19.4. Lease loss и minority
+- Intent несёт `lease_epoch`; minority сверяет epoch перед любым действием; mismatch → `not_dispatched`.
+- Потеря lease из reconciling/promotable → `aborted`; epoch не переиспользовать.
+- Outbox-gateway — единственный egress; egress drop при `epoch < current`; monotonic clock для lease margin.
+
+### 19.5. DSAR и reconcile
+- Reconcile перед генерацией нового intent проверяет DSAR watermark/tombstone; иначе новый intent запрещён.
+- `record_secret`/HMAC key — вне snapshot/WAL; кэш по `restore_id` + KMS quorum fallback при старте до replay.
+- Adaptive lease margin (RTT+jitter) и метрика TTL по классам — non-blocking monitoring.
+
+| ID | Требование |
+|---|---|
+| RB-101 | Restore: lease/CAS до reconcile; promote CAS (restore_id,epoch,ledger_seq) |
+| RB-102 | dispatched fsync+quorum-ack до RPC; outbox fsync; dedup (record,epoch) |
+| RB-103 | reconciling retry/backoff/escalated; none human attestation |
+| RB-104 | intent lease_epoch; minority mismatch→not_dispatched; egress drop |
+| RB-105 | DSAR tombstone lookup в reconcile; key cache+KMS quorum |
+| RB-106 | watermark CAS retry/limit/escalation; ledger quorum fail-closed |
+
+| ID | Тест |
+|---|---|
+| TB-93 | restore: reconcile под новым epoch; minority no reconciled_* |
+| TB-94 | crash ack↔RPC: dispatched, no not_dispatched |
+| TB-95 | reconciling backoff/escalated; none human attestation |
+| TB-96 | intent lease mismatch → not_dispatched; egress drop |
+| TB-97 | DSAR tombstone blocks new intent in reconcile |
+| TB-98 | watermark CAS retry/livelock guard; ledger down fail-closed |
