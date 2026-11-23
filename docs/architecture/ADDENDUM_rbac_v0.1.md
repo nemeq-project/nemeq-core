@@ -591,3 +591,50 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-84 | FSM transitions + fsync order + unknown TTL |
 | TB-85 | Orphan dispatch → unresolved human-ack |
 | TB-86 | DSAR salted HMAC/record_secret; chain verifies |
+
+
+## 18. v1-rc9: restore order, DSAR watermark, fence default, quorum epoch, FSM
+
+### 18.1. Restore (единственный порядок)
+`load_snapshot → replay WAL tail (fsync; torn tail по checksum) → apply_dsar_ledger (tombstone/watermark) → reconcile effects → CAS epoch → promote`.
+- DSAR-ledger quorum-replicated, append-only, monotonic seq; если ledger seq вырос — promote блокируется до применения.
+- `record_secret`/HMAC key — **вне** снапшотов и WAL; удаление record_secret делает hash необратимым.
+- Sink lookup для promote — только `enforced`; `proxy|none` — human-ack.
+
+### 18.2. Sink fence (fail-closed)
+- Default `none`; `proxy/enforced` — только после capability-теста (stale epoch reject).
+- `none` не в promote-path; весь egress — через fenced outbox-gateway; in-flight RPC не отозвать → lease margin + sink dedup.
+- SIGSTOP in-flight: для `none` — human-ack, для `proxy` — атомарная проверка epoch в той же записи, для `enforced` — sink reject.
+
+### 18.3. Epoch/quorum
+- Epoch из quorum lease store; intent/dispatch — только после quorum-acked read epoch; запись fsync до sink.
+- Minority: не dispatch, не reconcile, не «not applied»; потеря lease → `aborted` (терминален, новый restore_id).
+- CAS `(restore_id, epoch)`; epoch в outbox-gateway.
+
+### 18.4. FSM (полная)
+`intended → dispatched → applied | not_applied | unknown → reconciling → reconciled_applied | reconciled_not_applied → resolved`; `aborted`, `not_dispatched`.
+- `dispatched` fsync до sink; `intended` TTL → `not_dispatched`/`aborted`.
+- `unknown` TTL → `reconciling`; supersede только из `resolved`; `reconciled_not_applied` — только quorum-ack sink или fence-reject.
+- TTL-формула — атрибут класса эффекта (read-back/re-dispatch/human), не глобальная константа.
+
+### 18.5. DSAR v1
+- unlink+tombstone+chain; HMAC key отдельно от record_secret; sink — erase или флаг `not_erased`.
+- Watermark ledger блокирует promote при росте seq; WAL tail/snapshots в retention ≤ юридического срока; crypto-shred — F-02.
+
+| ID | Требование |
+|---|---|
+| RB-95 | Restore order: snapshot→WAL tail→DSAR ledger→reconcile→CAS |
+| RB-96 | DSAR ledger quorum/seq/watermark; record_secret вне снапшотов/WAL |
+| RB-97 | Sink default none; proxy/enforced capability test; non-promote for none |
+| RB-98 | Epoch quorum lease; quorum read before intent; minority no dispatch |
+| RB-99 | Full FSM + intended TTL; reconciled_not_applied quorum-ack |
+| RB-100 | DSAR sink erase/flag; retention ≤ DSAR term |
+
+| ID | Тест |
+|---|---|
+| TB-87 | DSAR после снапшота до WAL tail → restore не воскрешает |
+| TB-88 | Ledger seq watermark blocks promote |
+| TB-89 | Sink default none + capability test stale epoch |
+| TB-90 | Quorum epoch read before intent; minority no dispatch |
+| TB-91 | FSM intended TTL; unknown→reconciling; supersede resolved |
+| TB-92 | DSAR HMAC key separate; sink erase/flag |
