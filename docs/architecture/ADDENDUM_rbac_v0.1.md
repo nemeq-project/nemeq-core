@@ -315,6 +315,26 @@ Allow-only; `deny` — только глобальный от admin; групп�
 - `unknown` после kill/reopen — **reconciliation**, не автоповтор; внешний эффект ровно один.
 - Модель-тест: `idempotency_model.py` — stable=1 send, mutant epoch-in-key=2 (мутант пойман).
 
+### 13.1a. Уточнения по заключению Гермеса (idempotency)
+
+- Settlement: `UNIQUE(effect_id)`; вставка — **в одной транзакции** (atomic), иначе гонка двух dispatch даст дубль.
+- `effect_id = sha256(session_id, step_id)`; в записи хранится `payload_hash`. Тот же `effect_id` + другой `payload_hash` → **код 7 (конфликт)**, не перезапись.
+- `unknown`: источник истины — settlement journal; timeout (24 ч); решение — оператор (reconciliation queue), не автоповтор.
+- Идемпотентность **скоуплена сессией**: новый `session_id` = новый effect. Кросс-сессионный повтор — отдельный task/operation key (future).
+- `epoch` проверяется **исполнителем на каждом dispatch** (fencing), не только на reopen.
+
+| ID | Требование |
+|---|---|
+| RB-63 | Settlement UNIQUE(effect_id) + atomic insert |
+| RB-64 | payload_hash; конфликт payload → код 7 |
+| RB-65 | unknown: journal source of truth, timeout 24ч, operator reconciliation |
+| RB-66 | epoch fencing на каждом dispatch |
+
+| ID | Тест |
+|---|---|
+| TB-56 | Два параллельных dispatch одного effect_id → 1 эффект |
+| TB-57 | Тот же effect_id + другой payload_hash → код 7 |
+| TB-58 | unknown после kill → reconciliation, 1 эффект; нет автоповтора |
 ### 13.2. Ledger external anchor
 - Watermark — не якорь. Подписанный checkpoint (`tip_hash`, `seq`) вне backup set: off-host/WORM/KMS counter.
 - Реплики: 3 с quorum 2-of-3 или primary+witness; split-brain правила.
