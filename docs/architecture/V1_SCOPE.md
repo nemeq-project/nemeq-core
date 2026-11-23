@@ -59,3 +59,11 @@ v1 — «стеклянный» экспертный совет: только ч
 3. **Read gate, RBAC, consent/tombstone, classification, audit — в v1**; sealed-чтение — только root, admin_epishu — metadata.
 4. **Full DSAR — v2**, но базовый tombstone/retention по consent — в v1.
 5. **Тесты v1:** property-based RBAC, read gate, consent-каскад, classification-canary; sink/restore-тесты — v2.
+
+
+## 9. Условия Гермеса (23.11)
+
+1. **rc4/rc11 protocol superseded for v1:** эффект-протокол (sink/outbox/exactly-once/restore) отменён для v1; v2-baseline — F-18, дизайн сохранён.
+2. **Seam v2:** контракт write-path (`effect_id`, outbox states) остаётся в SDD как спецификация-заготовка, без реализации.
+3. **Память — запись:** hard-delete/TTL, consent, classification, audit покрывают память уже в v1.
+4. **Приёмка — замером:** read-path тесты (RBAC, read gate, TTL, audit); не отчёт.
