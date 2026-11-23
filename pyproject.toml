@@ -17,5 +17,5 @@ classifiers = [
 dev = ["pytest>=8", "pytest-cov>=5"]
 
 [tool.pytest.ini_options]
-testpaths = ["kernel", "agents"]
+testpaths = ["kernel", "agents", "tests"]
 addopts = "-q"
