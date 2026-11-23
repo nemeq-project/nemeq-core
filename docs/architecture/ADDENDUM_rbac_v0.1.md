@@ -686,3 +686,50 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-96 | intent lease mismatch → not_dispatched; egress drop |
 | TB-97 | DSAR tombstone blocks new intent in reconcile |
 | TB-98 | watermark CAS retry/livelock guard; ledger down fail-closed |
+
+
+## 20. v1-rc11: stable intent_id, active-gate, durable_queued, minority defer
+
+### 20.1. Dedup и epoch
+- Idempotency key sink = `(record_id, intent_id)` — стабилен между epoch; epoch — только fencing.
+- Sink/adapter отклоняет `epoch < max_seen_epoch(record)`; gateway drop `epoch<current`.
+- Для sink без fencing: reconcile ждёт `max_rpc_timeout + margin` перед re-dispatch.
+
+### 20.2. Dispatch state
+- `intended → durably_queued (fsync+quorum-ack) → rpc_sent → sink_acked`.
+- `not_dispatched` — только для `intended` без quorum-ack; `durably_queued` recovery переотправляет без локального dedup.
+- Outbox fsync до gateway; dedup на gateway и sink.
+
+### 20.3. Restore/active gate
+- `dispatch_gate = (state==active)` в том же quorum-CAS, что promote `(restore_id, epoch, ledger_seq)`.
+- В `restoring` — только stage; если ledger_seq вырос: cancel staged intents этого restore_id, новый проход reconcile, bounded retry → escalation.
+- Ledger и lease — один линеаризуемый consensus-store или serving-gate: чтения не отдаются, пока ledger seq ≥ promoted_seq.
+- Key cache — `(restore_id, ledger_seq)`.
+
+### 20.4. Minority/lease
+- Minority — только `defer`, без терминального `not_dispatched`; `not_dispatched` — quorum-CAS по lease_epoch.
+- Lease: логический `lease_epoch`; TTL от persisted `(boot_id, mono_base)`/quorum-time; смена boot_id = новый lease; hard cap adaptive margin.
+- Stale gateway: предъявляет lease_epoch + quorum-подтверждение на batch; sink отклоняет меньший epoch.
+
+### 20.5. Human attestation/FSM
+- Attestation подписывает `(restore_id, epoch, ledger_seq)`; dual-control + immutable audit; не переживает смену поколения.
+- `unknown→reconciling` CAS с attempt_counter; после лимита — только `escalated`; без ping-pong.
+- Fencing token `(restore_id, epoch)` в payload/headers sink; при 70% lease TTL без версии — human attestation.
+
+| ID | Требование |
+|---|---|
+| RB-107 | dedup (record_id,intent_id); epoch fencing only; sink max_seen_epoch |
+| RB-108 | durable_queued/rpc_sent/sink_acked; not_dispatched only pre-ack |
+| RB-109 | active-gate в promote CAS; staged cancel; serving-gate ledger |
+| RB-110 | minority defer; logical lease_epoch; boot_id TTL; stale gateway quorum |
+| RB-111 | attestation bound (restore_id,epoch,ledger_seq); dual control |
+| RB-112 | unknown attempt_counter/escalated; fencing token to sink |
+
+| ID | Тест |
+|---|---|
+| TB-99 | delayed old-epoch packet after re-dispatch → sink dedup |
+| TB-100 | crash ack↔RPC → durable_queued recovery; no not_dispatched |
+| TB-101 | ledger seq grow during restore: staged cancel; no egress |
+| TB-102 | minority only defer; stale gateway quorum check |
+| TB-103 | attestation generation mismatch rejected |
+| TB-104 | attempt counter → escalated; no ping-pong |
