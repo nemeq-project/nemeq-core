@@ -33,6 +33,7 @@
 | F-15 | Model/provider plugins | новые модели | gateway | P3 | supply chain |
 | F-16 | Audit UI/query для viewer | наблюдаемость | audit | P2 | не раскрывать ПД |
 | F-17 | UI control plane (web) | управление Nemeq | API | P1 | отдельный проект; ocmanager как база |
+| F-18 | Effect protocol v2: sink/outbox/exactly-once/restore/DSAR (rc11 baseline) | внешние side effects | v1 read-only | P1 (v2) | замороженный дизайн addenda §13–20 |
 
 ## 3. Явно не делать
 

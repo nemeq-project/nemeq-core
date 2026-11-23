@@ -50,3 +50,12 @@ LLM-вызов считается **read-only наблюдательным** д�
 ## 7. Следствие
 
 v1 — «стеклянный» экспертный совет: только чтение, без PII, без внешних эффектов. Всё, что требует crypto/DSAR/outbox, — v2.
+
+
+## 8. Условия Луча (23.11)
+
+1. **v1 SDD без sink/outbox/restore** — целиком, без полуреализаций; v2-главы — в feature list с замороженным rc11-дизайном как baseline.
+2. **Инварианты v1:** применимые к read-only зафиксировать; остальные — N/A с причиной.
+3. **Read gate, RBAC, consent/tombstone, classification, audit — в v1**; sealed-чтение — только root, admin_epishu — metadata.
+4. **Full DSAR — v2**, но базовый tombstone/retention по consent — в v1.
+5. **Тесты v1:** property-based RBAC, read gate, consent-каскад, classification-canary; sink/restore-тесты — v2.
