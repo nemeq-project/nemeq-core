@@ -154,3 +154,9 @@
 |---|---|
 | TS-24 | kill после dispatched → 1 эффект, unknown → reconcile |
 | TS-25 | мутант epoch-in-key → duplicate (тест краснеет) |
+
+
+## 10. v1 scope cut
+
+- v1: локальные сессии/память; внешние N-sink и exactly-once/restore — v2.
+- §7–9 (external effect protocol) — v2; v1 использует локальные транзакции и request_id для LLM.

@@ -733,3 +733,10 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-102 | minority only defer; stale gateway quorum check |
 | TB-103 | attestation generation mismatch rejected |
 | TB-104 | attempt counter → escalated; no ping-pong |
+
+
+## 21. v1 scope cut (23.11)
+
+- **v1 = read-only expert council:** 3 Awilu, LLM read-only, память, RBAC, метрики; без внешних N-sink.
+- **§13–20 — v2 protocol** (exactly-once/outbox/restore/DSAR/crypto); в v1 не реализуются и не являются критериями приёмки.
+- v1 приёмка — `V1_SCOPE.md` §4; LLM-вызовы — read-only, дедуп по request_id/lease для экономии.
