@@ -304,3 +304,56 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-47 | k: 3 учётки одного accountable_root → 1 голос; replay/nonce |
 | TB-48 | Sealed ACL: admin_epishu 403; root direct |
 | TB-49 | DSAR/raw TTL/quotas: cached/uncached/output/reasoning |
+
+
+## 13. v1-rc4: exactly-once, anchors, enforcement
+
+### 13.1. Идемпотентность (блокер №1)
+- `effect_id = sha256(session_id, step_id)` — **без epoch**; стабилен между reopen/переездом.
+- `epoch` — только fencing token: исполнитель отклоняет запись при `epoch < current`.
+- Settlement journal — по `effect_id`; outbox: `intent → dispatched → confirmed | unknown`.
+- `unknown` после kill/reopen — **reconciliation**, не автоповтор; внешний эффект ровно один.
+- Модель-тест: `idempotency_model.py` — stable=1 send, mutant epoch-in-key=2 (мутант пойман).
+
+### 13.2. Ledger external anchor
+- Watermark — не якорь. Подписанный checkpoint (`tip_hash`, `seq`) вне backup set: off-host/WORM/KMS counter.
+- Реплики: 3 с quorum 2-of-3 или primary+witness; split-brain правила.
+- Restore: карантин → сверка tip с якорем → promote/отказ; purge — **после** сверки.
+
+### 13.3. Read gate enforcement (остатки)
+- per-agent uid или LSM/eBPF; coredump off; запрет SCM_RIGHTS/shared mmap; аутентификация вызывающего в store; root/backup — только snapshot/read-only.
+- Broker не должен быть confused deputy: gate проверяет principal и ACL на каждом вызове.
+
+### 13.4. Audit
+- `subject = HMAC(k_subject, subject_id)` с versioning; ключ вне store.
+- 2-party: таймаут и режим деградации (fail-closed write, alert).
+- Список операций, требующих подписи; audit без ПД.
+
+### 13.5. Classification/Sealed
+- Наследование метки на chunks/summary/embeddings: `class = max(sources)`.
+- `sealed` не переопределяется classification override; override только non-sealed.
+- Root-доступ к sealed — best-effort `root_access` audit + notify (не блокирующий).
+
+### 13.6. k / DSAR / raw / quotas
+- Principals — admin-only; `accountable_root` сворачивает алиасы; nonce single-use store.
+- DSAR: индекс по субъекту (`subject_index`); raw исключён из бэкапов или TTL применяется к ним.
+- Квоты: fail-closed при недоступности счётчика; cached/uncached/output/reasoning.
+
+| ID | Требование |
+|---|---|
+| RB-56 | effect_id без epoch; epoch fencing; settlement journal; outbox |
+| RB-57 | unknown → reconciliation, не автоповтор |
+| RB-58 | Ledger checkpoint вне backup; quorum/witness; restore quarantine |
+| RB-59 | Read gate: per-agent uid/LSM; coredump/fd/mm; store auth |
+| RB-60 | Audit HMAC subject; 2-party timeout; ops list |
+| RB-61 | Classification propagation to chunks/summary/embeddings; sealed no override |
+| RB-62 | k nonce single-use; DSAR subject index; raw backup; quota fail-closed |
+
+| ID | Тест |
+|---|---|
+| TB-50 | exactly-once: kill после dispatched → 1 эффект, unknown → reconcile |
+| TB-51 | Ledger rollback обеих реплик/бэкапа → restore fail-closed |
+| TB-52 | Read gate: /proc/pid/mem, coredump, SCM_RIGHTS → deny |
+| TB-53 | HMAC subject key; audit 2-party timeout |
+| TB-54 | Classification propagation; sealed override denied |
+| TB-55 | k alias collapse; nonce replay; DSAR subject index |

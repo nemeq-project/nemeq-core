@@ -135,3 +135,22 @@
 | TS-21 | ops не вытесняет чужую сессию; admin_epishu — свою |
 | TS-22 | replay эффектов: нет дублей; старый epoch отвергнут |
 | TS-23 | 100 параллельных reopen: нет дублей |
+
+
+## 9. v1-rc4: exactly-once на стыке сессий и settlement
+
+- `effect_id` стабилен (`session_id`, `step_id`), epoch — fencing.
+- Outbox: intent → dispatched → confirmed | unknown; unknown — reconciliation.
+- Reopen после kill: settlement journal по effect_id; старый epoch не пишет.
+- Модель-тест `idempotency_model.py`: 1 send; мутант epoch-in-key — 2 (пойман).
+
+| ID | Требование |
+|---|---|
+| RS-27 | effect_id без epoch; epoch fencing |
+| RS-28 | outbox + unknown reconciliation |
+| RS-29 | settlement journal по effect_id |
+
+| ID | Тест |
+|---|---|
+| TS-24 | kill после dispatched → 1 эффект, unknown → reconcile |
+| TS-25 | мутант epoch-in-key → duplicate (тест краснеет) |

@@ -1,0 +1,3 @@
+stable: sends = 1 | journal = {"ea4cb38773dbeb62": {"status": "confirmed"}}
+mutant: sends = 2 | journal = {"7a14295ab957697c": {"status": "dispatched"}, "76b35d5d95ebe62d": {"status": "confirmed"}}
+PASS: stable effect_id => exactly-once; epoch-in-key => duplicate (mutant caught)
