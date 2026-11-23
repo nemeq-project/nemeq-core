@@ -1,7 +1,7 @@
 # Addendum: RBAC, группы, сегментация zikru-su
 
 **Статус:** дополнение к `SDD_nemeq_v0.4.md` · **Дата:** 2026-11-23 · **Автор:** Верста
-**Основание:** решения Повелителя по ролям и PII: admin / admin_epishu / ops; группы epishu и пользователей; zikru-su по пользователю; zikru-zi — read-only для ops.
+**Основание:** решения global admin по ролям и PII: admin / admin_epishu / ops; группы epishu и пользователей; zikru-su по пользователю; zikru-zi — read-only для ops.
 
 ## 1. Роли
 
@@ -20,9 +20,9 @@
 
 ## 2a. Sealed (вариант B — opt-in)
 
-- `sealed=true` только для `classification=sensitive_personal|secret`; устанавливает admin или owner (Повелитель); ops может запросить.
+- `sealed=true` только для `classification=sensitive_personal|secret`; устанавливает global admin или owner-ops; ops может запросить.
 - `admin_epishu` видит metadata (размер, число записей, владелец, классификация, даты); content — `403`.
-- **Break-glass для sealed:** запрос admin/admin_epishu → одобрение **второго принципала** (Повелитель или второй admin); причина; TTL ≤ 1 ч; уведомление субъекта (ops); отдельный immutable-аудит, недоступный `admin_epishu`; массовая выгрузка запрещена.
+- **Break-glass для sealed:** запрос admin_epishu → одобрение **global admin** (root); если запрашивает сам global admin — прямой root-доступ с аудитом; причина; TTL ≤ 1 ч; уведомление субъекта (ops); отдельный immutable-аудит, недоступный `admin_epishu`; массовая выгрузка запрещена.
 - Owner-ops всегда видит свой сегмент; unseal не отменяет аудит.
 - Sealed не попадает в обычный recall/поиск и в выгрузки.
 
@@ -96,3 +96,48 @@
 | TB-16 | Break-glass sealed | без второго принципала — 403; с ним — TTL/уведомление/аудит |
 | TB-17 | Immutable audit | admin_epishu не может читать/менять sealed-аудит |
 | TB-18 | Bulk export | sealed не выгружается/не ищется |
+
+
+## 8. Принято из ревью (v0.3)
+
+### 8.1. Классификация
+Каждая запись: `owner_principal`, `subjects[]`, `audience/purpose`, `classification` (`public|internal|confidential|personal|sensitive_personal|secret`), `source_session`, `provenance`, `consent_ref`, `retention`, `distillation_allowed`. `pii=unknown` трактуется как `personal`.
+
+### 8.2. Дистилляция: каскад и tombstone
+`revoke`/`tombstone` записи `zikru-zi` при удалении источника; пересчёт `k-support`; если поддержка < 3 — запись удаляется из выдачи/индекса; lineage сохраняется для аудита.
+
+### 8.3. Prompt-injection
+Записи `zikru-zi` подаются в промпт как **недоверенные данные** (не инструкции); отдельная обёртка/маркировка; тест «игнорируй инструкции» не меняет поведение.
+
+### 8.4. adannu service principal
+Cron-сессии создаются от `ops_system` (`kind=system`), не наследуют человеческие `zikru-su`; доступ только к сервисным сегментам; аудит.
+
+### 8.5. Гранты: упрощение
+Allow-only; `deny` — только глобальный от admin; группы без вложенности; TTL грантов; `grant_check` с объяснением; janitor orphaned grants (еженедельно).
+
+### 8.6. Очередь
+См. `ADDENDUM_sessions_v0.2`: приоритеты, aging, stop-current, per-session budget, context store crash protocol.
+
+| ID | Требование |
+|---|---|
+| RB-21 | Classification envelope обязателен; unknown PII = personal |
+| RB-22 | Cascade/tombstone дистиллятов; k<3 → удаление из выдачи |
+| RB-23 | zikru-zi — недоверенные данные в промпте |
+| RB-24 | adannu = ops_system/kind=system, без человеческих сегментов |
+| RB-25 | Allow-only + глобальный deny; TTL; grant_check; orphan janitor |
+| RB-26 | Sealed: global admin — root+аудит; admin_epishu — только metadata |
+| RB-27 | Viewer не видит контент/ПД |
+| RB-28 | pii=unknown → personal |
+| RB-29 | Аудит чтения ПД и grant-изменений |
+| RB-30 | Массовая выгрузка sealed запрещена |
+
+| ID | Тест |
+|---|---|
+| TB-19 | Classification envelope: запись без envelope отклонена |
+| TB-20 | Cascade: удаление источника → дистиллят исчезает при k<3 |
+| TB-21 | Injection: запись «игнорируй инструкции» не меняет поведение |
+| TB-22 | adannu: не читает человеческие zikru-su |
+| TB-23 | Grant_check: объяснение allow/deny |
+| TB-24 | Sealed: global admin root+аудит; admin_epishu metadata |
+| TB-25 | Orphan janitor: удалённый epishu → 0 грантов |
+| TB-26 | Viewer: контент/ПД → 403 |

@@ -1,7 +1,7 @@
 # Addendum: сессии, псевдо-многозадачность, read-after-sync
 
 **Статус:** дополнение к `SDD_nemeq_v0.4.md` · **Дата:** 2026-11-23 · **Автор:** Верста
-**Основание:** решения Повелителя (челлендж UI v0.3): одна активная сессия на epishu, видимость строго после sync, cron adannu, обмен знаниями — только внутри epishu.
+**Основание:** решения global admin (челлендж UI v0.3): одна активная сессия на epishu, видимость строго после sync, cron adannu, обмен знаниями — только внутри epishu.
 
 ## 1. Модель
 
@@ -45,3 +45,27 @@
 - `himem`: single-writer WAL, commit_seq, fsync, visibility.
 - `adannu`: cron → `session.create(source=cron)`.
 - UI: очередь, активная сессия, `commit_seq`, read-after-sync индикатор; cron-вкладка.
+
+
+## 5. Принято из ревью (v0.2)
+
+- Приоритеты: `system > interactive > batch`; aging; `stop-current` — привилегированная операция (admin/admin_epishu) с аудитом.
+- Per-session token budget; превышение → graceful drain.
+- Context store: snapshot WAL + checksum; crash между pause/activate → сессия `corrupted`, trace, уведомление admin.
+- adannu создаёт сессии от `ops_system` (`kind=system`).
+- Тесты: голодание очереди, crash-injection pause/activate, budget drain.
+
+| ID | Требование |
+|---|---|
+| RS-11 | Приоритеты system>interactive>batch + aging |
+| RS-12 | stop-current — admin/admin_epishu, аудит |
+| RS-13 | Per-session budget + graceful drain |
+| RS-14 | Context store WAL/checksum; crash → corrupted+trace |
+| RS-15 | Cron-сессии — ops_system/kind=system |
+
+| ID | Тест |
+|---|---|
+| TS-09 | 100 batch + 1 interactive: interactive < 2 мин |
+| TS-10 | stop-current → следующая из очереди |
+| TS-11 | kill -9 в pause/activate → восстановление или corrupted |
+| TS-12 | budget exceeded → drain, не потеря памяти |
