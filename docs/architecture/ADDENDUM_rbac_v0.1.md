@@ -6,17 +6,25 @@
 ## 1. Роли
 
 - **admin** — всё: все epishu, сессии, память, группы, гранты, lifecycle, аудит.
-- **admin_epishu** — владелец конкретного epishu (или группы epishu): видит **всё по своим epishu**, включая все сегменты `zikru-su` и все сессии; другие epishu не видит; управляет lifecycle/квотами в рамках своих epishu.
+- **admin_epishu** — владелец конкретного epishu (или группы epishu): видит всё по своим epishu, включая все сегменты `zikru-su` и все сессии, **кроме sealed** (там — только metadata); другие epishu не видит; управляет lifecycle/квотами.
 - **ops (user)** — работает с epishu через **свои** сессии; видит только свои сессии и **свой сегмент** `zikru-su`; `zikru-zi` — read-only (общий для epishu); писать в `zikru-zi` не может.
 - **viewer** — read-only: метрики, каталог/состояния epishu, аудит-события; без контента, ПД, контекста и lifecycle. Заменяет auditor.
 
 ## 2. Сегментация zikru-su
 
 Запись: `epishu_id`, `owner_user_id`, `scope` (субъект/контур), `value`, `source`, `ts`, `access=private`.
-- **Чтение:** ops — только `owner_user_id == self`; admin_epishu — все сегменты своего epishu; admin — все.
+- **Чтение:** ops — только `owner_user_id == self`; admin_epishu — все сегменты своего epishu, **кроме sealed** (metadata); admin — все (sealed — break-glass).
 - **Запись:** epishu пишет от имени владельца сессии, проставляет `owner_user_id`; PII-скан; ops не пишет чужие сегменты.
 - **Фильтрация — в сервисе памяти (himem/recall)**, не только в UI; UI не получает чужие записи.
 - **Аудит:** каждое чтение ПД — запись в `tuppu` (кто, epishu, scope, зачем).
+
+## 2a. Sealed (вариант B — opt-in)
+
+- `sealed=true` только для `classification=sensitive_personal|secret`; устанавливает admin или owner (Повелитель); ops может запросить.
+- `admin_epishu` видит metadata (размер, число записей, владелец, классификация, даты); content — `403`.
+- **Break-glass для sealed:** запрос admin/admin_epishu → одобрение **второго принципала** (Повелитель или второй admin); причина; TTL ≤ 1 ч; уведомление субъекта (ops); отдельный immutable-аудит, недоступный `admin_epishu`; массовая выгрузка запрещена.
+- Owner-ops всегда видит свой сегмент; unseal не отменяет аудит.
+- Sealed не попадает в обычный recall/поиск и в выгрузки.
 
 ## 3. zikru-zi
 
@@ -60,6 +68,11 @@
 | RB-15 | Дистилляция строго авто: PII→блок, k<3→quarantine, sensitive→sealed; без ручного approval |
 | RB-16 | admin_epishu управляет группами в рамках своих epishu; глобальные группы — только admin |
 
+| RB-17 | Sealed opt-in только для sensitive_personal/secret |
+| RB-18 | Break-glass sealed: второй принципал + TTL + уведомление + immutable audit |
+| RB-19 | admin_epishu видит sealed только metadata; content — 403 |
+| RB-20 | Sealed не в recall/поиске/выгрузках |
+
 ## 7. Тесты
 
 | ID | Тест | Критерий |
@@ -78,3 +91,8 @@
 | TB-12 | Viewer | видит метрики/состояние/аудит; контент/ПД — 403 |
 | TB-13 | Авто-дистилляция | PII → блок; k<3 → quarantine; sensitive → sealed; публикация авто |
 | TB-14 | Группы admin_epishu | группа в своих epishu — да; глобальная — 403 |
+
+| TB-15 | Sealed | admin_epishu: metadata — да, content — 403 |
+| TB-16 | Break-glass sealed | без второго принципала — 403; с ним — TTL/уведомление/аудит |
+| TB-17 | Immutable audit | admin_epishu не может читать/менять sealed-аудит |
+| TB-18 | Bulk export | sealed не выгружается/не ищется |
