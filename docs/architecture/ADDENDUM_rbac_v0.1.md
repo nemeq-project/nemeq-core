@@ -8,7 +8,7 @@
 - **admin** — всё: все epishu, сессии, память, группы, гранты, lifecycle, аудит.
 - **admin_epishu** — владелец конкретного epishu (или группы epishu): видит **всё по своим epishu**, включая все сегменты `zikru-su` и все сессии; другие epishu не видит; управляет lifecycle/квотами в рамках своих epishu.
 - **ops (user)** — работает с epishu через **свои** сессии; видит только свои сессии и **свой сегмент** `zikru-su`; `zikru-zi` — read-only (общий для epishu); писать в `zikru-zi` не может.
-- **viewer отсутствует** (по решению Повелителя).
+- **viewer** — read-only: метрики, каталог/состояния epishu, аудит-события; без контента, ПД, контекста и lifecycle. Заменяет auditor.
 
 ## 2. Сегментация zikru-su
 
@@ -21,7 +21,7 @@
 ## 3. zikru-zi
 
 - **Read:** все пользователи/сессии данного epishu (общий, без ПД).
-- **Write:** только epishu/himem — дистилляция из взаимодействия с ops, PII-фильтр, provenance; **ops не пишет**.
+- **Write:** только epishu/himem — дистилляция из взаимодействия с ops; **строго авто**: PII-детект → блок; k-support < 3 → quarantine; sensitive → sealed; публикация без ручного approval; provenance; **ops не пишет**.
 - **Cross-epishu:** запрещено в v1; future feature list.
 
 ## 4. Группы (везде)
@@ -29,7 +29,7 @@
 - **Ресурсные группы:** epishu-группы и пользовательские группы.
 - **Гранты:** `(principal: user|group, role: admin_epishu|ops, resource: epishu|group)`.
 - Массовый grant/revoke, наследование, исключения на конкретный epishu (deny wins), effective = union − deny.
-- admin управляет всеми; **admin_epishu выдаёт/отзывает только ops** в рамках своих epishu; создание admin/admin_epishu и глобальные гранты — только admin.
+- admin управляет всеми; **admin_epishu выдаёт/отзывает ops — индивидуально и через группы** — в рамках своих epishu; создание admin/admin_epishu, глобальные гранты и глобальные группы — только admin.
 - UI: страница Groups (epishu/users), матрица биндингов, bulk-действия; аудит.
 
 ## 5. Сессии и авторизация
@@ -55,7 +55,10 @@
 | RB-10 | admin_epishu не видит другие epishu |
 | RB-11 | Глобальные гранты — только admin |
 | RB-12 | Экспорт/revoked — только admin/admin_epishu своего epishu |
-| RB-13 | admin_epishu выдаёт/отзывает ops только на своих epishu; admin/admin_epishu и глобальные гранты — только admin |
+| RB-13 | admin_epishu выдаёт/отзывает ops на своих epishu индивидуально и через группы; admin/admin_epishu и глобальные гранты — только admin |
+| RB-14 | viewer: read-only метрики/состояние/аудит; без контента/ПД/lifecycle |
+| RB-15 | Дистилляция строго авто: PII→блок, k<3→quarantine, sensitive→sealed; без ручного approval |
+| RB-16 | admin_epishu управляет группами в рамках своих epishu; глобальные группы — только admin |
 
 ## 7. Тесты
 
@@ -72,3 +75,6 @@
 | TB-09 | Изоляция epishu | admin_epishu не видит чужой epishu |
 | TB-10 | UI | неавторизованные данные не приходят в ответ API |
 | TB-11 | Делегирование | admin_epishu: grant ops на свой — да; на чужой — нет; глобальный/admin — нет |
+| TB-12 | Viewer | видит метрики/состояние/аудит; контент/ПД — 403 |
+| TB-13 | Авто-дистилляция | PII → блок; k<3 → quarantine; sensitive → sealed; публикация авто |
+| TB-14 | Группы admin_epishu | группа в своих epishu — да; глобальная — 403 |
