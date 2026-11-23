@@ -5,7 +5,7 @@
 
 ## 1. Роли
 
-- **admin (global, root)** — развернувший инсталляцию Libbu; всё: все epishu, сессии, память, группы, гранты, lifecycle, аудит; root-доступ к sealed с аудитом.
+- **admin (global, root)** — развернувший инсталляцию Libbu; всё: все epishu, сессии, память, группы, гранты, lifecycle, аудит; **прямой доступ к файлам инсталляции** (root). Sealed защищает от admin_epishu, не от root.
 - **admin_epishu** — владелец конкретного epishu (или группы epishu): видит всё по своим epishu, включая все сегменты `zikru-su` и все сессии, **кроме sealed** (там — только metadata); другие epishu не видит; управляет lifecycle/квотами.
 - **ops (user)** — работает с epishu через **свои** сессии; видит только свои сессии и **свой сегмент** `zikru-su`; `zikru-zi` — read-only (общий для epishu); писать в `zikru-zi` не может.
 - **viewer** — read-only: метрики, каталог/состояния epishu, аудит-события; без контента, ПД, контекста и lifecycle. Заменяет auditor.
@@ -20,11 +20,12 @@
 
 ## 2a. Sealed (вариант B — opt-in)
 
-- `sealed=true` только для `classification=sensitive_personal|secret`; устанавливает global admin или owner-ops; ops может запросить.
-- `admin_epishu` видит metadata (размер, число записей, владелец, классификация, даты); content — `403`.
-- **Break-glass для sealed:** запрос admin_epishu → одобрение **global admin** (root); если запрашивает сам global admin — прямой root-доступ с аудитом; причина; TTL ≤ 1 ч; уведомление субъекта (ops); отдельный immutable-аудит, недоступный `admin_epishu`; массовая выгрузка запрещена.
-- Owner-ops всегда видит свой сегмент; unseal не отменяет аудит.
-- Sealed не попадает в обычный recall/поиск и в выгрузки.
+- `sealed=true` для `sensitive_personal` (opt-in) и **всегда** для `secret`.
+- `admin_epishu` видит metadata (размер, число записей, владелец, классификация, даты); content через API — `403`.
+- **Global admin (root)** имеет прямой доступ к файлам инсталляции; sealed защищает от admin_epishu, **не от root**. Это строгая граница.
+- Аудит доступа к ПД — tamper-evident/best-effort; root может изменить файлы, поэтому «immutable от root» не заявляем.
+- Owner-ops всегда видит свой сегмент; массовая выгрузка запрещена.
+- Sealed не попадает в обычный recall/поиск и в выгрузки; 2-of-N/quorum не вводим.
 
 ## 3. zikru-zi
 
@@ -68,9 +69,9 @@
 | RB-15 | Дистилляция строго авто: PII→блок, k<3→quarantine, sensitive→sealed; без ручного approval |
 | RB-16 | admin_epishu управляет группами в рамках своих epishu; глобальные группы — только admin |
 
-| RB-17 | Sealed opt-in только для sensitive_personal/secret |
-| RB-18 | Break-glass sealed: второй принципал + TTL + уведомление + immutable audit |
-| RB-19 | admin_epishu видит sealed только metadata; content — 403 |
+| RB-17 | Sealed: opt-in `sensitive_personal`, всегда `secret` |
+| RB-18 | admin_epishu: sealed content — 403; global admin (root) — прямой доступ к файлам |
+| RB-19 | Аудит ПД — tamper-evident, best-effort; root может изменить файлы (не «immutable от root») |
 | RB-20 | Sealed не в recall/поиске/выгрузках |
 
 ## 7. Тесты
@@ -141,3 +142,37 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-24 | Sealed: global admin root+аудит; admin_epishu metadata |
 | TB-25 | Orphan janitor: удалённый epishu → 0 грантов |
 | TB-26 | Viewer: контент/ПД → 403 |
+
+
+## 9. Решения круга 2 (23.11)
+
+1. **Root — доверенный:** admin (global root) имеет прямой доступ к файлам; admin_epishu — нет. Quorum/2-of-N не вводим.
+2. **Sealed:** `secret` — всегда sealed; `sensitive_personal` — opt-in.
+3. **k-support** — по различным `owner_principal` (и subjects), не по сессиям.
+4. **Consent:** event-sourced реестр; отзыв каскадно удаляет/скрывает производные (distilled/sealed/cached) в ≤ TTL janitor.
+5. **Crypto:** envelope encryption; per-segment DEK, KEK в keyring (доступ himem/root), ротация по расписанию/инциденту; admin_epishu ключей не имеет.
+6. **Сессии:** preemption — system вытесняет; interactive — budget; batch — aging; stop — ops/admin_epishu своего epishu.
+7. **ops_system:** токен scoped epishu+task, короткоживущий, отдельный по классам задач.
+8. **grant_check:** полное объяснение — admin; для остальных — «not found»-эквивалент.
+
+| ID | Требование |
+|---|---|
+| RB-31 | secret всегда sealed; sensitive_personal opt-in |
+| RB-32 | k по различным owner_principal |
+| RB-33 | consent registry event-sourced + каскад |
+| RB-34 | envelope encryption: DEK/KEK, ротация, root/himem |
+| RB-35 | preemption policy (system/interactive/batch) |
+| RB-36 | ops_system scoped epishu+task, короткоживущий |
+| RB-37 | grant_check: полное объяснение только admin |
+| RB-38 | admin root — файлы; admin_epishu — нет |
+
+| ID | Тест |
+|---|---|
+| TB-27 | secret без sealed — отказ |
+| TB-28 | 3 записи одного owner не дают k |
+| TB-29 | consent revoke → производные исчезают |
+| TB-30 | DEK/KEK: без ключа контент недоступен |
+| TB-31 | preemption: system вытесняет batch |
+| TB-32 | ops_system A не проходит в epishu B |
+| TB-33 | grant_check viewer — без структуры |
+| TB-34 | admin_epishu не читает файлы/контент sealed |

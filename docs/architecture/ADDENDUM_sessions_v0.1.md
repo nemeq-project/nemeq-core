@@ -69,3 +69,22 @@
 | TS-10 | stop-current → следующая из очереди |
 | TS-11 | kill -9 в pause/activate → восстановление или corrupted |
 | TS-12 | budget exceeded → drain, не потеря памяти |
+
+
+## 6. Решения круга 2
+
+- **Preemption:** system вытесняет немедленно; interactive — по budget; batch — по aging; stop-current — ops/admin_epishu своего epishu.
+- **ops_system:** токен scoped epishu+task, короткоживущий, отдельный по классам задач; не наследует человеческие сегменты.
+- **Fencing:** lease активной сессии; две активные невозможны; crash между commit/fsync → corrupted+trace.
+
+| ID | Требование |
+|---|---|
+| RS-16 | Preemption system>interactive>batch + aging |
+| RS-17 | stop-current — ops/admin_epishu своего epishu |
+| RS-18 | ops_system scoped epishu+task |
+
+| ID | Тест |
+|---|---|
+| TS-13 | system вытесняет batch за ≤ N сек |
+| TS-14 | ops_system A не проходит в epishu B |
+| TS-15 | две активные сессии невозможны (lease) |
