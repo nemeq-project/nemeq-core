@@ -377,3 +377,55 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-53 | HMAC subject key; audit 2-party timeout |
 | TB-54 | Classification propagation; sealed override denied |
 | TB-55 | k alias collapse; nonce replay; DSAR subject index |
+
+
+## 14. v1-rc5: anti-rollback, sink atomic, канонизация, unknown
+
+### 14.1. Anti-rollback (settlement/outbox/nonce)
+- В подписанный checkpoint/KMS-счётчик входят: `ledger_head`, `settlement_hwm`, `outbox_hwm`, `nonce_hwm`, `checkpoint_hash`.
+- Restore: окно `(checkpoint, snapshot]` → все effect_id **`unknown`**, nonce — **использованы**; promote только если checkpoint совпал с KMS-счётчиком; иначе gate закрыт.
+- Авто-redispatch после restore запрещён.
+
+### 14.2. Sink atomic
+- Sink выполняет side effect и `INSERT effect_id` **в одной транзакции** (или своим idempotency key). Crash между эффектом и confirm → 0 вторых эффектов.
+- `payload_hash` конфликт → код 7; новый эффект только через явный `supersede`.
+
+### 14.3. Ключ и step_id
+- `effect_id = SHA256("nemeq/effect/v1" || len(session_id)||session_id || len(step_id)||step_id)` — length-prefixed/domain separation.
+- `step_id` — детерминированный путь плана; повтор в цикле получает индекс итерации.
+- Fencing epoch — атомарно на всех переходах outbox и на sink; zombie со старым epoch отвергается.
+
+### 14.4. unknown
+- Per-step timeout (default 1 ч, max 24 ч) → `needs_reconciliation`, **fail-closed**, без автоповтора; решение оператора с аудитом.
+- Сценарий-тест: dispatch отправлен, confirm не пришёл → journal берёт верх, повторный dispatch fenced.
+
+### 14.5. Read gate baseline
+- **Обязательны:** per-agent uid **и** LSM/eBPF; data-plane root не читает sealed/raw; backup identity ≠ uid 0, только snapshot capability.
+- Запрет ptrace, `/proc/pid/mem`, coredump, SCM_RIGHTS, memfd/pidfd-передач; broker — capability attenuation, без ambient authority.
+
+### 14.6. Audit
+- Hash-chain + **асимметричная подпись auditor** (не только HMAC); якорь WORM/KMS; `k_subject` — только linkage.
+- 2-party timeout → fail-closed для mutating/sealed/dispatch; DSAR — crypto-shred linkage key, chain остаётся проверяемой.
+
+### 14.7. Quorum
+- Baseline: **3 реплики, 2-of-3 + KMS-счётчик**; primary+witness как альтернатива убран.
+
+| ID | Требование |
+|---|---|
+| RB-67 | Checkpoint/KMS: ledger+settlement+outbox+nonce HWM; restore window unknown/nonce used |
+| RB-68 | Sink atomic side effect + insert |
+| RB-69 | effect_id length-prefixed/domain; step_id deterministic+iteration |
+| RB-70 | unknown per-step timeout, fail-closed, operator audit |
+| RB-71 | read gate: per-agent uid + LSM, root no sealed/raw, deny ptrace/proc/fd |
+| RB-72 | audit asymmetric signature + 2-party fail-closed + DSAR shred |
+| RB-73 | quorum 3×2-of-3 + KMS counter |
+
+| ID | Тест |
+|---|---|
+| TB-59 | Restore старого backup → window unknown, nonce used, no redispatch |
+| TB-60 | Sink crash между эффектом и confirm → 1 эффект |
+| TB-61 | Key collision vectors; step iteration |
+| TB-62 | unknown timeout → fail-closed; scenario test |
+| TB-63 | Read gate: root data-plane no sealed/raw; ptrace/fd denied |
+| TB-64 | Audit forgery by subject fails; 2-party down → deny |
+| TB-65 | Quorum/KMS split-brain |
