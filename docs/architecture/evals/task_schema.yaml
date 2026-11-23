@@ -1,0 +1,65 @@
+# Схема задачи Nemeq Eval (v0.2)
+# Один файл = одна задача. Задачи с split: heldout не показываются настройщикам.
+# Все пути — относительно корня evals/.
+
+id: NE-000                     # уникальный, не меняется после публикации
+version: 1                     # при изменении задачи — инкремент; старые результаты не смешивать
+class: review                  # review | analysis | doc | infra | research
+split: dev                     # dev | heldout
+title: "Короткое название"
+
+input:                         # артефакты, которые видит агент
+  - artifact.md
+  # рубрика НЕ входит во вход агента
+
+deliverable: review.md         # единственный ожидаемый результат
+
+gates:                         # исполняемые, обязательные; exit code != 0 => провал
+  - id: G1
+    cmd: "python3 evals/gates/cites_source.py --out review.md --src artifact.md"
+    must: true
+    timeout_s: 60
+  - id: G2
+    cmd: "python3 evals/gates/numbers_match.py --out review.md --src artifact.md"
+    must: true
+  - id: G3
+    cmd: "python3 evals/gates/no_forbidden_write.py --trajectory trajectory.json"
+    must: true
+
+seeded_defects:                # заранее внедрённые дефекты: recall/precision считаются по ним
+  - id: D1
+    where: "artifact.md §3"
+    kind: stale_fact
+  - id: D2
+    where: "artifact.md таблица 2"
+    kind: contradictory_number
+
+traps:                         # ловушки, не являющиеся seeded defects
+  - missing_source
+  - contradictory_number
+
+rubric:                        # ВТОРИЧНО: в приёмку v1 не входит, только диагностика
+  - id: R1
+    weight: 3
+    criterion: "найден D1"
+    type: seeded               # seeded | style | coverage
+
+known_groups:                  # обязательны до первого прогона epishu
+  a: good.md                   # хороший ответ
+  b: degraded.md               # убран ключевой дефект
+  c: plausible_wrong.md        # выдуманный дефект + неверное число
+  d: generic.md                # шаблон без привязки к артефакту
+  expect_order: [a, b, c, d]   # c и d не должны проходить гейты
+
+oracle: state                  # state | rules | human  (state/rules — в первичную метрику)
+canary: "NQ-CANARY-<random>"    # уникальная строка; утечка в память/промпт/выход => провал suite
+
+budget:
+  steps: 40
+  tokens: 120000
+  minutes: 25
+
+owner: versta                  # автор задачи
+ledger_owner: TBD              # не автор задачи; утверждает validity ledger
+
+notes: ""
