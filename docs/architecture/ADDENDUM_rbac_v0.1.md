@@ -29,7 +29,7 @@
 - **Ресурсные группы:** epishu-группы и пользовательские группы.
 - **Гранты:** `(principal: user|group, role: admin_epishu|ops, resource: epishu|group)`.
 - Массовый grant/revoke, наследование, исключения на конкретный epishu (deny wins), effective = union − deny.
-- admin управляет всеми; admin_epishu — гранты в рамках своих epishu (глобальные — только admin).
+- admin управляет всеми; **admin_epishu выдаёт/отзывает только ops** в рамках своих epishu; создание admin/admin_epishu и глобальные гранты — только admin.
 - UI: страница Groups (epishu/users), матрица биндингов, bulk-действия; аудит.
 
 ## 5. Сессии и авторизация
@@ -55,6 +55,7 @@
 | RB-10 | admin_epishu не видит другие epishu |
 | RB-11 | Глобальные гранты — только admin |
 | RB-12 | Экспорт/revoked — только admin/admin_epishu своего epishu |
+| RB-13 | admin_epishu выдаёт/отзывает ops только на своих epishu; admin/admin_epishu и глобальные гранты — только admin |
 
 ## 7. Тесты
 
@@ -70,3 +71,4 @@
 | TB-08 | Аудит ПД | чтение ПД → запись tuppu |
 | TB-09 | Изоляция epishu | admin_epishu не видит чужой epishu |
 | TB-10 | UI | неавторизованные данные не приходят в ответ API |
+| TB-11 | Делегирование | admin_epishu: grant ops на свой — да; на чужой — нет; глобальный/admin — нет |
