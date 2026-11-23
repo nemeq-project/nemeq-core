@@ -45,7 +45,7 @@ Fencing: durable bump epoch → kill cgroup (оптимизация) → wait em
 
 1. **Epoch у каждого sink.** Любой side-effect несёт `(epishu_id, epoch, effect_id)`; приёмник отклоняет при `epoch < current`: `llm-gateway`, `awilu-egress`, WAL-writer, settlement, file-writers.
 2. **CAS-хранилище epoch** — `state/installation/epochs/<epishu-id>.json`, запись `tmp+rename+fsync`; bump до kill.
-3. **WAL** — запись `{seq,ts,op,payload,checksum,schema}`; commit — отдельная запись `{seq,op:"commit"}`; хвост после последнего commit обрезается (torn tail); повреждение в середине/checksum mismatch → стоп replay, код 3; checkpoint = последний commit.
+3. **WAL** — запись `{seq,ts,op,payload,checksum,schema}`; commit — отдельная запись `{seq,op:"commit"}`; torn tail допускается только в **последнем** файле WAL; предыдущие файлы обязаны заканчиваться commit, иначе — повреждение (код 3); при смене суток сначала commit, затем новый файл; checkpoint = последний commit.
 4. **Crash-матрица:** reserve→crash (lease истекает), request→crash (timeout=unknown), settle→crash (идемпотентный повтор), bump→crash до kill (sink отвергнет старый epoch), kill→crash (recovery по epoch/generation).
 5. **Изоляция:** каждый Awilu — свой UID, mount-ns, cgroup, `/var/nemeq/epishu/<id>` 0700; zi/su монтируются ro; запрещены symlink/hardlink-escape (openat2 RESOLVE_BENEATH).
 

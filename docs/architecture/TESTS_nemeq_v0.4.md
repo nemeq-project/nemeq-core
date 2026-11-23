@@ -39,11 +39,12 @@
 | T-30 | Secret canary in proxy | acceptance | R-21 | ключ в ответе proxy → не попадает в traces/логи | сохранить ответ |
 | T-31 | IPv6/DNS escape | security | R-22 | прямой IPv6/DNS-туннель/Unix → deny | разрешить DNS |
 | T-32 | Isolation escape | security | R-23 | symlink/`..`/hardlink из `view/` → отказ; чтение чужого `/var/nemeq/epishu/<id>` → EACCES | следовать symlink |
+| T-34 | WAL day boundary | chaos | R-08 | torn tail в последнем файле vs mid-file в старом: обрезка только последнего; старый битый → код 3; смена суток без потери commit | обрезать оба |
 | T-33 | Reserved features | unit | R-26 | `migrating`/продажа → отказ в v1 | принять команду |
 
 ## 2. Критерии приёмки пилота
 
-- T-01…T-33 зелёные; мутанты — 33/33.
+- T-01…T-34 зелёные; мутанты — 34/34.
 - T-19/T-20 на реальном `c-nemeq` (.46) и VM (.30).
 - T-11/T-21/T-28/T-30 — canary-набор (ПД/ключи) без утечек.
 - T-23/T-26/T-29 — chaos-прогон с рестартом.
