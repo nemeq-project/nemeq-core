@@ -491,3 +491,53 @@ Allow-only; `deny` — только глобальный от admin; групп�
 | TB-71 | read gate: io_uring/splice/pidfd/backup denied |
 | TB-72 | DSAR shred: chain verifies, payload gone |
 | TB-73 | quorum/KMS lease: no two leaders; outage fail-closed |
+
+
+## 16. v1-rc7: effect lifecycle, key version, lease fencing, restore lease, DSAR v1
+
+### 16.1. Effect lifecycle
+`intended → dispatched → applied | not_applied | unknown → resolved`.
+- Supersede/replan разрешён только из `applied/not_applied/cancelled`; при `unknown` — **409** до reconcile.
+- I-sink: перед новым dispatch — `lookup(old_key)`; N-sink: block/compensation/подписанный human-ack duplicate risk.
+- Tombstone — только после терминального статуса.
+
+### 16.2. Key/version
+- Журнал при journal-before-dispatch фиксирует `{key, key_version, payload_hash, step_id, fence_epoch}`; ключ **не пересчитывается**.
+- `key_version` ротация действует только на новые steps; in-flight/recovery используют версию из журнала.
+- `burned` — терминальный tombstone; повтор с тем же material запрещён; `applied|burned|unknown`.
+- length-prefix uint64 BE для domain/purpose/session/step; HKDF для purpose.
+
+### 16.3. Sink и fencing
+- **T:** `INSERT intent → effect → confirm`; UNIQUE(effect_id) ловит повтор (не «одна транзакция» для внешнего).
+- **I:** внешний idempotency key + lookup; TTL провайдера ≥ окна reconciliation, иначе класс N.
+- **N:** at-most-once; crash → unknown; автоповтор запрещён.
+- Lease margin: `lease_remaining > dispatch_timeout + max_clock_skew`; epoch/fence token — в sink, где возможно; SIGSTOP-тест зомби.
+
+### 16.4. Restore state machine
+`restored → fenced → reconciling → promotable → active`.
+- Потеря lease из `reconciling|promotable` → `aborted`; epoch не переиспользовать.
+- `reconcile_set`: все entries выше HWM терминальны/имеют manual exception; nonce закрыты; sink lookup выполнен; signed reconcile report.
+- Promote — CAS при живом lease/epoch; minority read-only, не отвечает «not applied»; unknown window TTL + alert.
+
+### 16.5. DSAR v1 (без at-rest crypto)
+- v1: **unlink + tombstone + chain**; crypto-shred — F-02 (future), не заявлять.
+- Chain: canonical encoding; tombstone — следующее звено; hash/signature сохраняются; shred только payload/linkage; encrypted snapshots — F-01.
+- DSAR subject_index; unlink по всем производным; verification chain after DSAR.
+
+| ID | Требование |
+|---|---|
+| RB-82 | Effect lifecycle; supersede только из terminal; unknown→409 |
+| RB-83 | key/version/payload_hash в журнале; no recompute; burned terminal |
+| RB-84 | T/I/N sink contract; I lookup/TTL; N at-most-once |
+| RB-85 | lease margin/epoch token; SIGSTOP zombie test |
+| RB-86 | restore FSM + lease loss→aborted + reconcile_set + CAS |
+| RB-87 | DSAR v1 unlink+tombstone+chain; crypto-shred F-02 |
+
+| ID | Тест |
+|---|---|
+| TB-74 | supersede при unknown → 409; после reconcile — ок |
+| TB-75 | key rotation in-flight: версия из журнала, без дубля |
+| TB-76 | I-sink lookup fail → 0 dispatch; TTL → N |
+| TB-77 | lease margin/SIGSTOP zombie reject |
+| TB-78 | restore lease loss → aborted; promote CAS |
+| TB-79 | DSAR unlink+tombstone; chain verifies; no crypto claim |
