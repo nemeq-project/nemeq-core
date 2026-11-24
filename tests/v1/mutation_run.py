@@ -97,40 +97,79 @@ MUTANTS: list[dict[str, str]] = [
         "id": "M8",
         "name": "store_skips_cas",
         "file": "massaru/store.py",
-        "test": "test_cas_conflict_on_put_and_delete",
-        "old": """            request.expected_rev is not None""",
-        "new": """            False and request.expected_rev is not None""",
+        "test": "test_cas_conflict",
+        "old": """            if (
+                request.expected_rev is not None
+                and request.expected_rev != current_rev
+            ):""",
+        "new": """            if (
+                False and request.expected_rev is not None
+                and request.expected_rev != current_rev
+            ):""",
     },
     {
         "id": "M9",
-        "name": "store_skips_chain_verification",
+        "name": "store_skips_prev_check",
         "file": "massaru/store.py",
-        "test": "test_corrupt_hash_chain_raises_on_open",
-        "old": """                if change.get("prevHash") != expected_hash:
-                    raise StoreCorrupt(
-                        f"change {change_rev} breaks hash-chain"
-                    )""",
-        "new": """                if False:
-                    raise StoreCorrupt(
-                        f"change {change_rev} breaks hash-chain"
-                    )""",
+        "test": "test_corrupt_prev_chain_fails",
+        "old": """            if prev != expected_hash:
+                report.errors.append(f"prev mismatch at rev {rev}")
+                break""",
+        "new": """            if False:
+                report.errors.append(f"prev mismatch at rev {rev}")
+                break""",
     },
     {
         "id": "M10",
-        "name": "store_skips_verify_on_open",
+        "name": "store_allows_duplicate_rev",
         "file": "massaru/store.py",
-        "test": "test_corrupt_hash_chain_raises_on_open",
-        "old": """            self._ensure_meta()
-            self.verify()""",
-        "new": """            self._ensure_meta()""",
+        "test": "test_duplicate_rev_fails",
+        "old": """            if rev != expected_rev:
+                report.errors.append(
+                    f"rev mismatch: expected {expected_rev}, got {rev}"
+                )
+                break""",
+        "new": """            if False:
+                report.errors.append(
+                    f"rev mismatch: expected {expected_rev}, got {rev}"
+                )
+                break""",
     },
     {
         "id": "M11",
-        "name": "store_uses_sync_false",
+        "name": "store_skips_hash_check",
         "file": "massaru/store.py",
-        "test": "test_no_sync_false_and_public_interface",
-        "old": """                sync=True,""",
-        "new": """                sync=False,""",
+        "test": "test_corrupt_middle_fails_fsck_and_start",
+        "old": """            if digest != _txn_hash(rev, prev, txn):
+                report.errors.append(f"hash mismatch at rev {rev}")
+                break""",
+        "new": """            if False:
+                report.errors.append(f"hash mismatch at rev {rev}")
+                break""",
+    },
+    {
+        "id": "M12",
+        "name": "store_skips_fsync",
+        "file": "massaru/store.py",
+        "test": "test_fsync_is_called_before_ack",
+        "old": """                for line in lines:
+                    handle.write(line)
+                handle.flush()
+                self._fsync_fd(handle.fileno())""",
+        "new": """                for line in lines:
+                    handle.write(line)
+                handle.flush()""",
+    },
+    {
+        "id": "M13",
+        "name": "store_does_not_update_meta",
+        "file": "massaru/store.py",
+        "test": "test_restart_and_meta",
+        "old": """        self._stats["fsyncs"] += 1
+        self._write_meta()
+        self._materialize(changed, state)""",
+        "new": """        self._stats["fsyncs"] += 1
+        self._materialize(changed, state)""",
     },
 ]
 

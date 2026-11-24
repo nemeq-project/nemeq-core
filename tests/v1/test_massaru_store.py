@@ -1,189 +1,354 @@
-"""Tests for the LMDB-backed Store (APISERVER v0.3, D-11)."""
+"""TEXTSTORE v0.1 tests: model, CAS, durability, fsck, restore, group commit."""
 
 from __future__ import annotations
 
 import json
+import random
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import lmdb
 import pytest
 
+from massaru import store_fsck
 from massaru.store import (
-    ConflictError,
     GENESIS_HASH,
+    ConflictError,
+    DurabilityError,
     Store,
+    StoreBusy,
     StoreCorrupt,
-    StoreError,
-    _change_hash,
+    _txn_hash,
+    scan_store,
 )
 
 
-def epishu(s: Store, name: str, value: int = 1, expected_rev=None):
-    return s.put(
-        "Epishu",
-        name,
-        {"spec": {"value": value}, "status": {"phase": "Pending"}},
+def put(store: Store, key: str, number: int = 1, expected_rev=None, **kwargs):
+    return store.put(
+        key,
+        {"spec": {"n": number}, "status": {}},
         expected_rev=expected_rev,
+        **kwargs,
     )
 
 
-def test_put_get_list_delete(tmp_path: Path):
-    with Store(tmp_path / "db") as s:
-        first = epishu(s, "e1")
-        epishu(s, "e2")
-        s.put("Su", "s1", {"spec": {"image": "su"}})
+def test_put_get_list_delete_and_materialization(tmp_path: Path):
+    path = tmp_path / "store"
+    with Store(path) as store:
+        first = put(store, "epishu/e1", 1, expected_rev=0)
+        put(store, "epishu/e2", 2, expected_rev=0)
+        put(store, "su/s1", 3, expected_rev=0)
 
-        assert first["name"] == "e1"
-        assert first["uid"]
         assert first["resourceVersion"] == 1
-        assert s.get("Epishu", "e1")["spec"] == {"value": 1}
-        assert s.get("Epishu", "missing") is None
-        assert [o["name"] for o in s.list("Epishu")] == ["e1", "e2"]
-        assert len(s.list()) == 3
+        assert first["uid"]
+        assert store.get("epishu/e1")["spec"] == {"n": 1}
+        assert store.get("epishu/missing") is None
+        assert [v["resourceVersion"] for v in store.list("epishu/")] == [1, 2]
+        assert len(store.list()) == 3
 
-        assert s.delete("Epishu", "e1", expected_rev=1) is True
-        assert s.get("Epishu", "e1") is None
-        assert s.delete("Epishu", "e1") is False
-        assert s.verify() is True
+        assert store.delete("epishu/e1", expected_rev=1) is None
+        assert store.get("epishu/e1") is None
+        store.delete("epishu/e1")
+        assert store.verify() is True
+
+        assert (path / "state" / "epishu" / "e1.json").exists() is False
+        assert (path / "state" / "epishu" / "e2.json").is_file()
+        assert (path / "views" / "index.md").is_file()
+        assert (path / "views" / "audit.csv").is_file()
+        assert (path / "meta.json").is_file()
 
 
-def test_cas_conflict_on_put_and_delete(tmp_path: Path):
-    with Store(tmp_path / "db") as s:
-        epishu(s, "e1", expected_rev=0)
+def test_cas_conflict(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        put(store, "epishu/e1", 1, expected_rev=0)
         with pytest.raises(ConflictError):
-            epishu(s, "e1", value=2, expected_rev=0)
-        assert s.get("Epishu", "e1")["resourceVersion"] == 1
-
-        updated = epishu(s, "e1", value=2, expected_rev=1)
-        assert updated["resourceVersion"] == 2
+            put(store, "epishu/e1", 2, expected_rev=0)
+        assert store.get("epishu/e1")["resourceVersion"] == 1
+        put(store, "epishu/e1", 2, expected_rev=1)
         with pytest.raises(ConflictError):
-            s.delete("Epishu", "e1", expected_rev=1)
-        assert s.delete("Epishu", "e1", expected_rev=2) is True
+            store.delete("epishu/e1", expected_rev=1)
+        store.delete("epishu/e1", expected_rev=2)
+        assert store.get("epishu/e1") is None
 
 
-def test_restart_preserves_objects_and_rev(tmp_path: Path):
-    path = tmp_path / "db"
-    s = Store(path)
-    epishu(s, "e1")
-    epishu(s, "e2")
-    s.close()
+def test_restart_and_meta(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e1", 2, expected_rev=1)
+    store.close()
 
-    s2 = Store(path)
-    try:
-        assert s2.get("Epishu", "e1")["resourceVersion"] == 1
-        assert s2.get("Epishu", "e2")["resourceVersion"] == 2
-        third = epishu(s2, "e3", expected_rev=0)
+    meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+    assert meta["rev"] == 2
+    assert meta["last_hash"] != GENESIS_HASH
+
+    with Store(path) as reopened:
+        assert reopened.get("epishu/e1")["spec"] == {"n": 2}
+        third = put(reopened, "epishu/e2", 3, expected_rev=0)
         assert third["resourceVersion"] == 3
-        assert s2.verify() is True
-        changes = list(s2.watch(0, timeout=0.01))
-        assert [c["rev"] for c in changes] == [1, 2, 3]
-    finally:
-        s2.close()
+        report = reopened.fsck()
+        assert report.ok is True
+        assert report.rev == 3
 
 
-def test_corrupt_hash_chain_raises_on_open(tmp_path: Path):
-    path = tmp_path / "db"
-    s = Store(path)
-    epishu(s, "e1")
-    epishu(s, "e2")
-    s.close()
-
-    env = lmdb.open(str(path), map_size=64 * 1024 * 1024)
+def test_two_writers_are_exclusive(tmp_path: Path):
+    path = tmp_path / "store"
+    first = Store(path)
     try:
-        key = b"chg\x00" + f"{1:020d}".encode("ascii")
-        with env.begin(write=True) as txn:
-            raw = txn.get(key)
-            assert raw is not None
-            change = json.loads(raw)
-            change["prevHash"] = "sha256:" + "f" * 64
-            change["hash"] = _change_hash(change)
-            txn.put(key, json.dumps(change, sort_keys=True).encode("utf-8"))
+        with pytest.raises(StoreBusy):
+            Store(path)
     finally:
-        env.close()
+        first.close()
+    with Store(path):
+        assert True
 
+
+def test_fsync_is_called_before_ack(tmp_path: Path):
+    store = Store(tmp_path / "store")
+    called: list[int] = []
+    original = store._fsync_fd
+
+    def counting(fd: int) -> None:
+        called.append(fd)
+        original(fd)
+
+    store._fsync_fd = counting
+    put(store, "epishu/e1", 1, expected_rev=0)
+    assert called
+    assert store.stats()["fsyncs"] == 1
+    store.close()
+
+
+def test_crash_after_write_before_fsync_is_not_acked(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path, commit_window=0.002)
+    put(store, "epishu/e1", 1, expected_rev=0)
+
+    def broken_fsync(fd: int) -> None:
+        raise OSError("simulated crash before fsync")
+
+    store._fsync_fd = broken_fsync
+    with pytest.raises(DurabilityError):
+        put(store, "epishu/e2", 2, expected_rev=0)
+    store.close()
+
+    with Store(path) as reopened:
+        assert reopened.get("epishu/e2") is None
+        assert reopened.fsck().rev == 1
+
+
+def test_crash_after_fsync_before_ack_is_durable(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path, commit_window=0.002)
+    put(store, "epishu/e1", 1, expected_rev=0)
+
+    def crash() -> None:
+        raise RuntimeError("simulated crash after fsync")
+
+    store._after_fsync = crash
+    with pytest.raises(RuntimeError):
+        put(store, "epishu/e2", 2, expected_rev=0)
+    store.close()
+
+    with Store(path) as reopened:
+        assert reopened.get("epishu/e2")["spec"] == {"n": 2}
+        report = reopened.fsck()
+        assert report.ok is True
+        assert report.rev == 2
+
+
+def test_torn_tail_is_repaired_at_start(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e2", 2, expected_rev=0)
+    store.close()
+
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    with segment.open("ab") as handle:
+        handle.write(b'{"rev":3')
+    report = store_fsck.fsck(path, repair=False)
+    assert report.ok is False
+    assert any("torn" in error for error in report.errors)
+
+    with Store(path) as repaired:
+        assert repaired.fsck().rev == 2
+        assert repaired.get("epishu/e2")["spec"] == {"n": 2}
+    assert b'{"rev":3' not in segment.read_bytes()
+
+
+def test_corrupt_middle_fails_fsck_and_start(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e2", 2, expected_rev=0)
+    put(store, "epishu/e3", 3, expected_rev=0)
+    store.close()
+
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    lines = segment.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[1])
+    record["txn"][0]["value"]["spec"]["n"] = 999
+    lines[1] = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    segment.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("hash mismatch" in error for error in report.errors)
     with pytest.raises(StoreCorrupt):
         Store(path)
 
 
-def test_restore_from_copy(tmp_path: Path):
-    path = tmp_path / "db"
-    backup = tmp_path / "backup"
-    s = Store(path)
-    epishu(s, "e1")
-    epishu(s, "e2")
-    s.backup(backup)
-    s.close()
 
-    restored = Store(backup)
-    try:
-        assert restored.get("Epishu", "e1")["spec"] == {"value": 1}
-        assert len(restored.list("Epishu")) == 2
-        third = epishu(restored, "e3", expected_rev=0)
-        assert third["resourceVersion"] == 3
-        assert restored.verify() is True
-    finally:
-        restored.close()
+def _rewrite_record(segment: Path, index: int, mutate) -> None:
+    lines = segment.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[index])
+    mutate(record)
+    record["hash"] = _txn_hash(
+        int(record["rev"]), str(record["prev"]), record["txn"]
+    )
+    lines[index] = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    segment.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def test_group_commit_batches(tmp_path: Path):
+def test_corrupt_prev_chain_fails(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e2", 2, expected_rev=0)
+    store.close()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    _rewrite_record(segment, 1, lambda record: record.__setitem__("prev", GENESIS_HASH))
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("prev mismatch" in error for error in report.errors)
+    with pytest.raises(StoreCorrupt):
+        Store(path)
+
+
+def test_duplicate_rev_fails(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e2", 2, expected_rev=0)
+    store.close()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    _rewrite_record(segment, 1, lambda record: record.__setitem__("rev", 1))
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("rev mismatch" in error for error in report.errors)
+    with pytest.raises(StoreCorrupt):
+        Store(path)
+
+
+def test_property_model_vs_store(tmp_path: Path):
+    rng = random.Random(20261124)
+    path = tmp_path / "store"
+    model: dict[str, dict] = {}
+    keys = [f"epishu/e{i}" for i in range(8)]
+    with Store(path, commit_window=0.002) as store:
+        for _ in range(300):
+            key = rng.choice(keys)
+            current = model.get(key)
+            expected = current["resourceVersion"] if current else 0
+            conflict = rng.random() < 0.10
+            if conflict:
+                expected += 1
+            if rng.random() < 0.65:
+                try:
+                    value = store.put(
+                        key,
+                        {"spec": {"n": rng.randrange(100)}},
+                        expected_rev=expected,
+                    )
+                except ConflictError:
+                    assert expected != (current["resourceVersion"] if current else 0)
+                    continue
+                model[key] = value
+            else:
+                try:
+                    store.delete(key, expected_rev=expected)
+                except ConflictError:
+                    assert expected != (current["resourceVersion"] if current else 0)
+                    continue
+                model.pop(key, None)
+
+            assert store.get(key) == model.get(key)
+            assert len(store.list()) == len(model)
+
+        assert store.fsck().ok is True
+        assert store.verify() is True
+
+
+def test_group_commit_batches_with_one_fsync(tmp_path: Path):
     count = 30
     barrier = threading.Barrier(count)
-    with Store(tmp_path / "db", commit_window=0.010) as s:
+    with Store(tmp_path / "store", commit_window=0.010) as store:
 
         def writer(index: int):
             barrier.wait()
-            return epishu(s, f"e{index}", value=index, expected_rev=0)
+            return store.put(f"epishu/e{index}", {"spec": {"n": index}})
 
         with ThreadPoolExecutor(max_workers=count) as pool:
             results = list(pool.map(writer, range(count)))
 
-        stats = s.stats()
+        stats = store.stats()
         assert len(results) == count
-        assert len(s.list("Epishu")) == count
         assert stats["ops"] == count
         assert stats["max_batch"] > 1
-        assert stats["commits"] < stats["ops"]
-        assert s.verify() is True
+        assert stats["fsyncs"] < count
+        assert len(store.list("epishu/")) == count
 
 
-def test_watch_from_rev(tmp_path: Path):
-    with Store(tmp_path / "db") as s:
-        epishu(s, "e1")
-        epishu(s, "e2")
-        changes = list(s.watch(0, timeout=0.01))
-        assert [c["rev"] for c in changes] == [1, 2]
-        assert changes[0]["type"] == "ADDED"
-        assert changes[0]["prevHash"] == GENESIS_HASH
-        assert list(s.watch(2, timeout=0.01)) == []
+def test_watch_and_request_idempotency(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        first = put(store, "epishu/e1", 1, expected_rev=0, request_id="req-1")
+        duplicate = put(store, "epishu/e1", 2, expected_rev=0, request_id="req-1")
+        assert duplicate == first
+        assert store.fsck().transactions == 1
+
+        put(store, "epishu/e2", 2, expected_rev=0)
+        events = list(store.watch(0, timeout=0.01))
+        assert [event["rev"] for event in events] == [1, 2]
+        assert events[0]["txn"][0]["op"] == "put"
+        assert list(store.watch(2, timeout=0.01)) == []
+
+        store.delete("epishu/e1")
+        event = list(store.watch(2, timeout=0.01))[-1]
+        assert event["rev"] == 3
+        assert event["txn"][0]["op"] == "del"
 
 
-def test_delete_writes_deleted_change(tmp_path: Path):
-    with Store(tmp_path / "db") as s:
-        epishu(s, "e1")
-        assert s.delete("Epishu", "e1") is True
-        assert s.delete("Epishu", "e1") is False
-        changes = list(s.watch(0, timeout=0.01))
-        assert [c["type"] for c in changes] == ["ADDED", "DELETED"]
-        assert changes[-1]["rev"] == 2
-        assert changes[-1]["prevHash"] == changes[0]["hash"]
-        assert s.verify() is True
+def test_snapshot_and_restore_from_copy(tmp_path: Path):
+    path = tmp_path / "store"
+    backup = tmp_path / "backup"
+    store = Store(path)
+    put(store, "epishu/e1", 1, expected_rev=0)
+    put(store, "epishu/e2", 2, expected_rev=0)
+    rev = store.snapshot()
+    assert rev == 2
+    assert (path / "snap" / "0000000002.json").is_file()
+    assert (path / "views" / "index.md").is_file()
+    store.close()
+
+    shutil.copytree(path, backup)
+    with Store(backup) as restored:
+        assert restored.get("epishu/e1")["spec"] == {"n": 1}
+        assert restored.fsck().rev == 2
+        assert restored.snapshot() == 2
 
 
-def test_commit_window_is_bounded(tmp_path: Path):
-    for invalid in (0.001, 0.02):
+def test_commit_window_bounds(tmp_path: Path):
+    for value in (0.001, 0.02):
         with pytest.raises(ValueError):
-            Store(tmp_path / f"db-{invalid}", commit_window=invalid)
+            Store(tmp_path / f"store-{value}", commit_window=value)
 
 
-def test_no_sync_false_and_public_interface():
+def test_no_lmdb_dependency():
     source = (Path(__file__).resolve().parents[2] / "massaru" / "store.py").read_text(
         encoding="utf-8"
     )
-    assert "sync=False" not in source
-    assert "sync=True" in source
-    for method in ("get", "list", "watch", "put", "delete"):
+    assert "lmdb" not in source.lower()
+    for method in ("get", "list", "put", "delete", "watch", "snapshot", "fsck"):
         assert callable(getattr(Store, method))
-    assert issubclass(ConflictError, StoreError)
-    assert issubclass(StoreCorrupt, StoreError)

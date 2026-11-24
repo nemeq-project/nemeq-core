@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lint for nemeq-core (stdlib + explicit lmdb dependency).
+"""Dependency-free lint for nemeq-core.
 
 Checks:
 - every tracked Python file compiles;
@@ -17,9 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".venv", "run"}
-LOCAL_PACKAGES = {"kernel", "agents", "massaru", "tests", "tools"}
+LOCAL_PACKAGES = {"kernel", "agents", "massaru", "nqctl", "tests", "tools"}
 DEV_ALLOWED = {"pytest"}
-RUNTIME_DEPENDENCIES = {"lmdb"}
 
 
 def iter_python_files() -> list[Path]:
@@ -69,7 +68,6 @@ def main() -> int:
         set(sys.stdlib_module_names)
         | LOCAL_PACKAGES
         | DEV_ALLOWED
-        | RUNTIME_DEPENDENCIES
         | {"__future__"}
     )
     files = iter_python_files()

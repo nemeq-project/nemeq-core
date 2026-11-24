@@ -18,9 +18,9 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install lmdb pytest pytest-cov
+          python -m pip install pytest pytest-cov
 
-      - name: Lint (stdlib + lmdb, no shell=True)
+      - name: Lint (stdlib-only, no shell=True)
         run: python tools/lint.py
 
       - name: Tests and coverage
@@ -29,6 +29,7 @@ jobs:
             --cov=kernel.libbu \
             --cov=agents \
             --cov=massaru \
+            --cov=nqctl \
             --cov-fail-under=70 \
             -q
 
@@ -38,5 +39,5 @@ jobs:
       - name: Agents mutants (5/5)
         run: python agents/tests/mutation_run.py
 
-      - name: V1 skeleton mutants (11/11)
+      - name: V1 skeleton mutants (13/13)
         run: python tests/v1/mutation_run.py
