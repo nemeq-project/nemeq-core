@@ -29,7 +29,7 @@ def snapshot(path: str | Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="store_fsck")
     parser.add_argument("action", choices=("fsck", "verify", "snapshot"))
-    parser.add_argument("--store", default="/var/lib/nemeq/apiserver")
+    parser.add_argument("--store", default="/var/nemeq/apiserver")
     parser.add_argument("--repair", action="store_true")
     args = parser.parse_args(argv)
     if args.action == "snapshot":

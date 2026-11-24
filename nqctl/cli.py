@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nqctl")
     parser.add_argument(
         "--store",
-        default=os.environ.get("NEMEQ_STORE", "/var/lib/nemeq/apiserver"),
+        default=os.environ.get("NEMEQ_STORE", "/var/nemeq/apiserver"),
     )
     sub = parser.add_subparsers(dest="command", required=True)
     store = sub.add_parser("store", help="store maintenance")
