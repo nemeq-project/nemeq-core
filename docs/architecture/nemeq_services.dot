@@ -1,0 +1,59 @@
+digraph Nemeq {
+  rankdir=LR;
+  graph [fontname="DejaVu Sans", fontsize=11, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.9, compound=true];
+  node  [fontname="DejaVu Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="#f7f9fc", color="#8aa0b8", penwidth=1.2];
+  edge  [fontname="DejaVu Sans", fontsize=9, color="#5b6b7c", arrowsize=0.8];
+
+  subgraph cluster_clients {
+    label="Клиенты"; style="rounded,dashed"; color="#b8c4d0"; fontcolor="#44556a";
+    nqctl [label="nqctl\nCLI (без демона)\n~/.nq/config", fillcolor="#e8f1fb"];
+    ui    [label="ocmanager UI\nбраузер\nhttps://192.168.96.51", fillcolor="#e8f1fb"];
+  }
+
+  subgraph cluster_cp {
+    label="Control plane — c-nemeq (10.238.183.32)"; style="rounded"; color="#4a78a8"; fontcolor="#1f3f5e"; bgcolor="#f2f7fc";
+    api [label="apiserver :7443 (HTTPS/mTLS)\n/apis/nemeq.io/v1alpha1\nCRUD · watch · admission · audit", fillcolor="#d6e6f7", penwidth=2];
+    store [label="Store: JSONL-журнал\n/var/nemeq/apiserver/\nlog · snap · anchor · state", fillcolor="#fff4d6", color="#c9a227"];
+    adm [label="admission\nRBAC · quota · policy\n(read-only v1)", fillcolor="#eef3f8"];
+  }
+
+  subgraph cluster_ctrl {
+    label="Контроллеры (watch → reconcile)"; style="rounded,dashed"; color="#b8c4d0"; fontcolor="#44556a";
+    massaru [label="massaru\nEpishu → каталоги/процесс"];
+    sess    [label="session\nодна активная, очередь, Lease"];
+    gw      [label="llm-gateway\nModel/Quota, ключи вне Awilu"];
+    gc      [label="gc / metrics\nfinalizers, экспорт"];
+  }
+
+  subgraph cluster_dp {
+    label="Data plane — epishu runtime"; style="rounded"; color="#5a9a6a"; fontcolor="#1f4f2a"; bgcolor="#f2fbf4";
+    epi [label="epishu process\n/var/nemeq/epishu/<id>/\ninstance.toml · view · paqidutu", fillcolor="#dff2e3"];
+    zikru [label="zikru (данные)\n/var/nemeq/data/epishu/<id>/\natoms · wal · traces", fillcolor="#eaf7ed"];
+  }
+
+  subgraph cluster_ext {
+    label="Внешние / инфраструктура"; style="rounded,dashed"; color="#c8b8b8"; fontcolor="#5a4444";
+    prov [label="LLM-провайдеры\nkosareva API"];
+    vm   [label="VictoriaMetrics :8428"];
+    graf [label="Grafana :3000"];
+    obs  [label="off-host audit\nanchor / backup"];
+  }
+
+  nqctl -> api [label="HTTPS 7443\napply/get/watch", color="#2f6fb0", penwidth=1.6];
+  ui    -> api [label="HTTPS 7443", color="#2f6fb0", penwidth=1.6];
+  api   -> adm [label="authN → admission", style=dashed];
+  adm   -> store [label="CAS + fsync", color="#b8860b", penwidth=1.8];
+  api   -> store [label="group commit\nhash-chain", color="#b8860b", penwidth=1.8];
+  api   -> massaru [label="watch", color="#4a78a8"];
+  api   -> sess    [label="watch", color="#4a78a8"];
+  api   -> gw      [label="watch", color="#4a78a8"];
+  api   -> gc      [label="watch", color="#4a78a8"];
+  massaru -> epi [label="reconcile\n(create/start/stop)", color="#2f8f4a"];
+  sess    -> epi [label="Lease/FSM", color="#2f8f4a"];
+  epi     -> zikru [label="read/write\n(read gate)", color="#2f8f4a"];
+  epi     -> gw [label="LLM request\n(read-only)", color="#8a5aa8"];
+  gw      -> prov [label="egress allowlist", color="#8a5aa8"];
+  api     -> vm [label="/metrics :9101", style=dashed, color="#777"];
+  vm      -> graf [style=dashed, color="#777"];
+  store   -> obs [label="anchor + backup\n(off-host)", style=dashed, color="#999"];
+}
