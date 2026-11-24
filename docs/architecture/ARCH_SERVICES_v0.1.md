@@ -6,9 +6,9 @@
 
 | Компонент | Где | Endpoint | Назначение |
 |---|---|---|---|
-| **apiserver** | c-nemeq, 10.238.183.32 | `https://192.168.96.46:7443` (mTLS) | единственный control-plane API: CRUD/watch/admission/audit |
+| **apiserver** | c-nemeq, 10.238.183.32 | `https://192.168.96.46:8448` (mTLS) | единственный control-plane API: CRUD/watch/admission/audit |
 | **ocmanager UI** | abuntu .51 (nginx) | `https://192.168.96.51/` | веб-UI: epishu, сессии, права, audit, метрики; ходит только в API |
-| **nqctl** | рабочая станция/хост | `~/.nq/config` → 7443 | CLI без демона: apply/get/describe/logs/watch |
+| **nqctl** | рабочая станция/хост | `~/.nq/config` → 8448 | CLI без демона: apply/get/describe/logs/watch |
 | **llm-gateway** | c-nemeq | `http://10.238.183.32:8080` (internal) | read-only вызовы LLM; ключи вне Awilu |
 | **exporter** | c-nemeq | `:9101/metrics` | метрики Libbu/epishu |
 | **VictoriaMetrics** | gsrv .30 | `:8428` | хранение метрик |

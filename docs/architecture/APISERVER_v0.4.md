@@ -32,7 +32,7 @@
 
 Истина — объект в API. Файлы (02b-layout, `instance.toml`) — **материализация** контроллера. Прямые записи «компонент → диск» и «компонент → компонент» запрещены.
 
-**Endpoint:** `https://<host>:7443` (mTLS). Порт 7443, не 6443 (kube-apiserver) и не 8443 (LiteLLM). Меняется через `NEMEQ_API_PORT`.
+**Endpoint:** `https://<host>:8448` (mTLS). Порт 8448, не 6443 (kube-apiserver) и не 8443 (LiteLLM). Меняется через `NEMEQ_API_PORT`.
 
 ---
 

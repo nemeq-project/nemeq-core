@@ -12,7 +12,7 @@ digraph Nemeq {
 
   subgraph cluster_cp {
     label="Control plane — c-nemeq (10.238.183.32)"; style="rounded"; color="#4a78a8"; fontcolor="#1f3f5e"; bgcolor="#f2f7fc";
-    api [label="apiserver :7443 (HTTPS/mTLS)\n/apis/nemeq.io/v1alpha1\nCRUD · watch · admission · audit", fillcolor="#d6e6f7", penwidth=2];
+    api [label="apiserver :8448 (HTTPS/mTLS)\n/apis/nemeq.io/v1alpha1\nCRUD · watch · admission · audit", fillcolor="#d6e6f7", penwidth=2];
     store [label="Store: JSONL-журнал\n/var/nemeq/apiserver/\nlog · snap · anchor · state", fillcolor="#fff4d6", color="#c9a227"];
     adm [label="admission\nRBAC · quota · policy\n(read-only v1)", fillcolor="#eef3f8"];
   }
@@ -39,8 +39,8 @@ digraph Nemeq {
     obs  [label="off-host audit\nanchor / backup"];
   }
 
-  nqctl -> api [label="HTTPS 7443\napply/get/watch", color="#2f6fb0", penwidth=1.6];
-  ui    -> api [label="HTTPS 7443", color="#2f6fb0", penwidth=1.6];
+  nqctl -> api [label="HTTPS 8448\napply/get/watch", color="#2f6fb0", penwidth=1.6];
+  ui    -> api [label="HTTPS 8448", color="#2f6fb0", penwidth=1.6];
   api   -> adm [label="authN → admission", style=dashed];
   adm   -> store [label="CAS + fsync", color="#b8860b", penwidth=1.8];
   api   -> store [label="group commit\nhash-chain", color="#b8860b", penwidth=1.8];
