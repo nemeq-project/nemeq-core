@@ -66,6 +66,111 @@ MUTANTS: list[dict[str, str]] = [
     "atoms",""",
         "new": """    "atoms",""",
     },
+    {
+        "id": "M5",
+        "name": "reconcile_ignores_digest_mismatch",
+        "file": "massaru/reconcile.py",
+        "test": "test_digest_mismatch_rejects_without_layout",
+        "old": """            observation.actual_digest is None
+            or observation.actual_digest != observation.expected_digest""",
+        "new": """            observation.actual_digest is None
+            or False""",
+    },
+    {
+        "id": "M6",
+        "name": "bind_model_mutates_input_spec",
+        "file": "massaru/reconcile.py",
+        "test": "test_bind_model_is_pure_spec_update",
+        "old": """    return replace(spec, model=model)""",
+        "new": """    spec.model = model
+    return spec""",
+    },
+    {
+        "id": "M7",
+        "name": "reconcile_allows_writable_epishu",
+        "file": "massaru/reconcile.py",
+        "test": "test_read_only_and_kind_guards",
+        "old": """    if spec.read_only is not True:""",
+        "new": """    if False:""",
+    },
+    {
+        "id": "M8",
+        "name": "store_skips_cas",
+        "file": "massaru/store.py",
+        "test": "test_cas_conflict",
+        "old": """            if (
+                request.expected_rev is not None
+                and request.expected_rev != current_rev
+            ):""",
+        "new": """            if (
+                False and request.expected_rev is not None
+                and request.expected_rev != current_rev
+            ):""",
+    },
+    {
+        "id": "M9",
+        "name": "store_skips_prev_check",
+        "file": "massaru/store.py",
+        "test": "test_corrupt_prev_chain_fails",
+        "old": """            if prev != expected_hash:
+                report.errors.append(f"prev mismatch at rev {rev}")
+                break""",
+        "new": """            if False:
+                report.errors.append(f"prev mismatch at rev {rev}")
+                break""",
+    },
+    {
+        "id": "M10",
+        "name": "store_allows_duplicate_rev",
+        "file": "massaru/store.py",
+        "test": "test_duplicate_rev_fails",
+        "old": """            if rev != expected_rev:
+                report.errors.append(
+                    f"rev mismatch: expected {expected_rev}, got {rev}"
+                )
+                break""",
+        "new": """            if False:
+                report.errors.append(
+                    f"rev mismatch: expected {expected_rev}, got {rev}"
+                )
+                break""",
+    },
+    {
+        "id": "M11",
+        "name": "store_skips_hash_check",
+        "file": "massaru/store.py",
+        "test": "test_corrupt_middle_fails_fsck_and_start",
+        "old": """            if digest != _txn_hash(rev, prev, txn):
+                report.errors.append(f"hash mismatch at rev {rev}")
+                break""",
+        "new": """            if False:
+                report.errors.append(f"hash mismatch at rev {rev}")
+                break""",
+    },
+    {
+        "id": "M12",
+        "name": "store_skips_fsync",
+        "file": "massaru/store.py",
+        "test": "test_fsync_is_called_before_ack",
+        "old": """                for line in lines:
+                    handle.write(line)
+                handle.flush()
+                self._fsync_fd(handle.fileno())""",
+        "new": """                for line in lines:
+                    handle.write(line)
+                handle.flush()""",
+    },
+    {
+        "id": "M13",
+        "name": "store_does_not_update_meta",
+        "file": "massaru/store.py",
+        "test": "test_restart_and_meta",
+        "old": """        self._stats["fsyncs"] += 1
+        self._write_meta()
+        self._materialize(changed, state)""",
+        "new": """        self._stats["fsyncs"] += 1
+        self._materialize(changed, state)""",
+    },
 ]
 
 
@@ -78,7 +183,7 @@ def _run_pytest(
         PYTHON,
         "-m",
         "pytest",
-        "tests/v1/test_massaru_skeleton.py",
+        "tests/v1",
         "-q",
         "-p",
         "no:cacheprovider",
@@ -105,7 +210,7 @@ def _apply(path: Path, old: str, new: str) -> None:
 
 
 def main() -> int:
-    print("baseline: unmutated v1 skeleton suite")
+    print("baseline: unmutated v1 suite")
     baseline = _run_pytest(ROOT)
     if baseline.returncode != 0:
         print(baseline.stdout)
@@ -146,7 +251,7 @@ def main() -> int:
 
         caught = completed.returncode != 0
         match = re.search(
-            r"FAILED\s+\S*test_massaru_skeleton\.py::(\S+)",
+            r"FAILED\s+\S*test_[^:]*\.py::(\S+)",
             completed.stdout,
         )
         witness = match.group(1) if match else (
