@@ -16,7 +16,7 @@
 ## 2. Формат
 
 ```
-/var/lib/nemeq/apiserver/
+/var/nemeq/apiserver/
 ├── lock                     # flock: один писатель
 ├── log/000001.jsonl         # сегменты 64 МБ
 ├── snap/0001000.json        # снапшот состояния
