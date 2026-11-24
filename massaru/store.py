@@ -22,7 +22,6 @@ import copy
 import csv
 import fcntl
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -38,6 +37,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .layout import epishu_dir, epishu_root, instance_file, safe_epishu_id
 
@@ -156,6 +158,24 @@ def _record_hash(record: dict[str, Any]) -> str:
     return _sha(body)
 
 
+def _batch_hash(records: list[dict[str, Any]]) -> str:
+    return _sha({"txnHashes": [str(record["hash"]) for record in records]})
+
+
+def _commit_hash(record: dict[str, Any]) -> str:
+    body = {
+        "fmt": int(record["fmt"]),
+        "type": "commit",
+        "batchId": str(record["batchId"]),
+        "fromRev": int(record["fromRev"]),
+        "toRev": int(record["toRev"]),
+        "count": int(record["count"]),
+        "batchHash": str(record["batchHash"]),
+        "prev": str(record["prev"]),
+    }
+    return _sha(body)
+
+
 def _safe_key(key: str) -> str:
     key = _nfc(key)
     if not KEY_RE.match(key):
@@ -195,7 +215,10 @@ def _write_atomic(path: Path, data: bytes) -> None:
 def _anchor_key_from_store(path: Path) -> bytes | None:
     env = os.environ.get("NEMEQ_ANCHOR_KEY")
     if env:
-        return env.encode("utf-8")
+        try:
+            return bytes.fromhex(env)
+        except ValueError:
+            return env.encode("utf-8")
     key_path = path / ANCHOR_KEY
     if key_path.is_file():
         try:
@@ -204,6 +227,73 @@ def _anchor_key_from_store(path: Path) -> bytes | None:
             return None
     return None
 
+
+def _anchor_private(seed: bytes) -> Ed25519PrivateKey:
+    if len(seed) != 32:
+        raise StoreCorrupt("anchor key must be a 32-byte Ed25519 seed")
+    return Ed25519PrivateKey.from_private_bytes(seed)
+
+
+def _anchor_public(seed: bytes) -> bytes:
+    return _anchor_private(seed).public_key().public_bytes_raw()
+
+
+def _anchor_key_id(seed: bytes) -> str:
+    return hashlib.sha256(_anchor_public(seed)).hexdigest()[:16]
+
+
+def _anchor_body(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "fmt": int(payload["fmt"]),
+        "rev": int(payload["rev"]),
+        "hash": str(payload["hash"]),
+        "prevAnchorHash": str(payload["prevAnchorHash"]),
+        "keyId": str(payload["keyId"]),
+    }
+
+
+def _verify_anchor(payload: dict[str, Any], seed: bytes) -> str | None:
+    try:
+        body = _anchor_body(payload)
+        signature = str(payload["sig"])
+        if signature.startswith("ed25519:"):
+            signature = signature.split(":", 1)[1]
+        if body["keyId"] != _anchor_key_id(seed):
+            return "anchor keyId mismatch"
+        _anchor_private(seed).public_key().verify(
+            bytes.fromhex(signature), _jcs(body)
+        )
+    except (KeyError, TypeError, ValueError, InvalidSignature) as exc:
+        return f"anchor signature invalid: {exc}"
+    return None
+
+
+def _load_anchors(path: Path) -> list[dict[str, Any]]:
+    anchors: list[dict[str, Any]] = []
+    for anchor_path in sorted((path / ANCHOR_DIR).glob("*.anchor")):
+        try:
+            payload = json.loads(anchor_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StoreCorrupt(f"cannot read anchor: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise StoreCorrupt("anchor is not an object")
+        anchors.append(payload)
+    return anchors
+
+
+def _latest_anchor(path: Path) -> dict[str, Any] | None:
+    anchors = _load_anchors(path)
+    return anchors[-1] if anchors else None
+
+
+def _latest_sink_state(sink: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads((sink / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StoreCorrupt(f"cannot read remote watermark: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise StoreCorrupt("remote watermark must be an object")
+    return payload
 
 @dataclass
 class FsckReport:
@@ -243,51 +333,52 @@ class ScanResult:
     request_cache: dict[str, Any]
     events: list[dict[str, Any]]
     anchor: dict[str, Any] | None
+    rev_hashes: dict[int, str]
 
 
 def _log_segments(path: Path) -> list[Path]:
     return sorted((path / LOG_DIR).glob("*.jsonl"))
 
 
-def _latest_anchor(path: Path) -> dict[str, Any] | None:
-    anchors = sorted((path / ANCHOR_DIR).glob("*.anchor"))
-    if not anchors:
-        return None
+def _truncate_batch_tail(
+    base: Path,
+    segments: list[Path],
+    start_segment: int,
+    start_offset: int,
+    report: FsckReport,
+) -> None:
+    if not segments:
+        return
+    start_segment = max(0, min(start_segment, len(segments) - 1))
+    segment = segments[start_segment]
     try:
-        payload = json.loads(anchors[-1].read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise StoreCorrupt(f"cannot read anchor: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise StoreCorrupt("anchor is not an object")
-    return payload
-
-
-def _verify_anchor(
-    payload: dict[str, Any], key: bytes
-) -> str | None:
-    try:
-        body = {
-            "fmt": int(payload["fmt"]),
-            "rev": int(payload["rev"]),
-            "hash": str(payload["hash"]),
-        }
-        signature = str(payload["sig"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise StoreCorrupt(f"bad anchor shape: {exc}") from exc
-    expected = "hmac-sha256:" + hmac.new(
-        key, _jcs(body), hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(signature, expected):
-        return "anchor signature mismatch"
-    return None
+        size = segment.stat().st_size
+        with segment.open("r+b") as handle:
+            handle.truncate(start_offset)
+            handle.flush()
+            os.fsync(handle.fileno())
+        report.truncated_bytes += max(0, size - start_offset)
+        for later in segments[start_segment + 1 :]:
+            if later.exists():
+                report.truncated_bytes += later.stat().st_size
+                later.unlink()
+        report.repaired = True
+    except OSError as exc:
+        report.errors.append(f"cannot truncate batch tail: {exc}")
 
 
 def scan_store(
     path: str | Path,
     repair: bool = False,
     anchor_key: bytes | None = None,
+    remote: str | Path | None = None,
 ) -> ScanResult:
-    """Scan journal without taking the writer lock."""
+    """Scan journal without taking the writer lock.
+
+    Transactions are buffered in ``pending`` and applied only after a valid
+    commit line.  An uncommitted tail is a batch tail, not a valid suffix:
+    ``repair=True`` truncates it from the first pending transaction.
+    """
     base = Path(path)
     segments = _log_segments(base)
     report = FsckReport(
@@ -300,10 +391,16 @@ def scan_store(
     txns: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     requests: dict[str, Any] = {}
+    rev_hashes: dict[int, str] = {}
     expected_rev = 1
     expected_hash = GENESIS_HASH
+    committed_rev = 0
+    committed_hash = GENESIS_HASH
     committed_offset = 0
-    committed_segment = segments[-1].name if segments else ""
+    committed_segment = ""
+    committed_index = 0
+    pending: list[dict[str, Any]] = []
+    pending_start: tuple[int, int] | None = None
 
     for segment_index, segment in enumerate(segments):
         is_last = segment_index == len(segments) - 1
@@ -315,49 +412,137 @@ def scan_store(
         offset = 0
         for line in data.splitlines(keepends=True):
             if not line.endswith(b"\n"):
+                start = pending_start or (committed_index, committed_offset)
                 if not is_last:
                     report.errors.append(
                         f"torn tail in non-last segment {segment.name}"
                     )
                 elif repair:
-                    try:
-                        with segment.open("r+b") as handle:
-                            handle.truncate(offset)
-                            handle.flush()
-                            os.fsync(handle.fileno())
-                        report.repaired = True
-                        report.truncated_bytes += len(line)
-                    except OSError as exc:
-                        report.errors.append(f"cannot repair {segment}: {exc}")
+                    _truncate_batch_tail(base, segments, start[0], start[1], report)
                 else:
                     report.errors.append(
-                        f"torn tail in {segment.name} needs --repair"
+                        f"uncommitted/torn batch tail in {segment.name} "
+                        "needs --repair"
                     )
                 break
             if len(line) == 1:
                 report.errors.append(f"empty line in {segment.name}")
+                break
+            if len(line) > MAX_LINE_BYTES:
+                report.errors.append(f"line exceeds 2 MiB at rev {expected_rev}")
                 break
             try:
                 record = json.loads(line[:-1].decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 report.errors.append(f"invalid JSON at rev {expected_rev}: {exc}")
                 break
+            if not isinstance(record, dict):
+                report.errors.append(f"record at rev {expected_rev} is not object")
+                break
             try:
                 if _normalize(record) != record:
                     report.errors.append(f"non-NFC record at rev {expected_rev}")
                     break
                 fmt = int(record.get("fmt", FORMAT))
+            except (InvalidRequest, TypeError, ValueError) as exc:
+                report.errors.append(f"bad fmt at rev {expected_rev}: {exc}")
+                break
+            if fmt != FORMAT:
+                report.errors.append(f"unsupported fmt {fmt} at rev {expected_rev}")
+                break
+
+            if record.get("type") == "commit":
+                try:
+                    if not pending:
+                        raise StoreCorrupt("commit without pending transactions")
+                    first = int(pending[0]["rev"])
+                    last = int(pending[-1]["rev"])
+                    if (
+                        int(record["fromRev"]) != first
+                        or int(record["toRev"]) != last
+                        or int(record["count"]) != len(pending)
+                    ):
+                        raise StoreCorrupt("commit does not cover pending batch")
+                    if record["prev"] != expected_hash:
+                        raise StoreCorrupt("commit prev does not match batch")
+                    if str(record["batchHash"]) != _batch_hash(pending):
+                        raise StoreCorrupt("commit batchHash mismatch")
+                    if str(record["hash"]) != _commit_hash(record):
+                        raise StoreCorrupt("commit hash mismatch")
+                    for pending_record in pending:
+                        rev = int(pending_record["rev"])
+                        for sequence, operation in enumerate(pending_record["txn"]):
+                            if not isinstance(operation, dict):
+                                raise InvalidRequest("operation is not object")
+                            op = operation.get("op")
+                            key = _safe_key(operation.get("key"))
+                            if op == "put":
+                                value = operation.get("value")
+                                if not isinstance(value, dict):
+                                    raise InvalidRequest("put value is not object")
+                                event_type = "ADDED" if key not in state else "MODIFIED"
+                                state[key] = copy.deepcopy(value)
+                                events.append(
+                                    {
+                                        "rev": rev,
+                                        "seq": sequence,
+                                        "type": event_type,
+                                        "key": key,
+                                        "resourceVersion": str(
+                                            value.get("resourceVersion", "")
+                                        ),
+                                        "value": copy.deepcopy(value),
+                                    }
+                                )
+                            elif op == "del":
+                                previous = state.pop(key, None)
+                                events.append(
+                                    {
+                                        "rev": rev,
+                                        "seq": sequence,
+                                        "type": "DELETED",
+                                        "key": key,
+                                        "resourceVersion": (
+                                            str(previous.get("resourceVersion", ""))
+                                            if previous
+                                            else ""
+                                        ),
+                                        "value": None,
+                                    }
+                                )
+                            else:
+                                raise InvalidRequest(f"unknown op {op!r}")
+                        request_id = pending_record.get("requestId")
+                        if isinstance(request_id, str) and request_id:
+                            if pending_record["txn"][-1].get("op") == "put":
+                                requests[request_id] = copy.deepcopy(
+                                    pending_record["txn"][-1]["value"]
+                                )
+                            else:
+                                requests[request_id] = None
+                        txns.append(pending_record)
+                except (KeyError, TypeError, ValueError, StoreCorrupt, InvalidRequest) as exc:
+                    report.errors.append(f"bad commit at rev {expected_rev}: {exc}")
+                    break
+                committed_rev = int(record["toRev"])
+                committed_hash = str(record["hash"])
+                rev_hashes[committed_rev] = committed_hash
+                committed_offset = offset + len(line)
+                committed_segment = segment.name
+                committed_index = segment_index
+                pending = []
+                pending_start = None
+                expected_hash = committed_hash
+                offset += len(line)
+                continue
+
+            try:
                 rev = int(record["rev"])
                 prev = str(record["prev"])
                 digest = str(record["hash"])
                 txn = record["txn"]
-            except (InvalidRequest, KeyError, TypeError, ValueError) as exc:
-                report.errors.append(
-                    f"bad record shape at rev {expected_rev}: {exc}"
-                )
-                break
-            if fmt != FORMAT:
-                report.errors.append(f"unsupported fmt {fmt} at rev {rev}")
+            except (KeyError, TypeError, ValueError) as exc:
+                report.errors.append(f"bad transaction shape at rev {expected_rev}: {exc}")
                 break
             if rev != expected_rev:
                 report.errors.append(
@@ -377,97 +562,114 @@ def scan_store(
             except (KeyError, TypeError, ValueError, InvalidRequest) as exc:
                 report.errors.append(f"bad hash input at rev {rev}: {exc}")
                 break
-            if len(line) > MAX_LINE_BYTES:
-                report.errors.append(f"line at rev {rev} exceeds 2 MiB")
-                break
-            try:
-                for sequence, operation in enumerate(txn):
-                    if not isinstance(operation, dict):
-                        raise InvalidRequest("operation is not object")
-                    op = operation.get("op")
-                    key = _safe_key(operation.get("key"))
-                    if op == "put":
-                        value = operation.get("value")
-                        if not isinstance(value, dict):
-                            raise InvalidRequest("put value is not object")
-                        event_type = "ADDED" if key not in state else "MODIFIED"
-                        resource_version = str(value.get("resourceVersion", ""))
-                        state[key] = copy.deepcopy(value)
-                        events.append(
-                            {
-                                "rev": rev,
-                                "seq": sequence,
-                                "type": event_type,
-                                "key": key,
-                                "resourceVersion": resource_version,
-                                "value": copy.deepcopy(value),
-                            }
-                        )
-                    elif op == "del":
-                        previous = state.pop(key, None)
-                        events.append(
-                            {
-                                "rev": rev,
-                                "seq": sequence,
-                                "type": "DELETED",
-                                "key": key,
-                                "resourceVersion": (
-                                    str(previous.get("resourceVersion", ""))
-                                    if previous
-                                    else ""
-                                ),
-                                "value": None,
-                            }
-                        )
-                    else:
-                        raise InvalidRequest(f"unknown op {op!r}")
-            except (StoreError, InvalidRequest) as exc:
-                report.errors.append(f"bad txn at rev {rev}: {exc}")
-                break
-            request_id = record.get("requestId")
-            if isinstance(request_id, str) and request_id:
-                if txn and txn[-1].get("op") == "put":
-                    requests[request_id] = copy.deepcopy(txn[-1]["value"])
-                else:
-                    requests[request_id] = None
-            txns.append(record)
+            if pending_start is None:
+                pending_start = (segment_index, offset)
+            pending.append(record)
             expected_rev += 1
             expected_hash = digest
             offset += len(line)
-            committed_offset = offset
-            committed_segment = segment.name
-        if report.errors:
+        if report.errors or report.repaired:
             break
 
-    report.rev = expected_rev - 1
-    report.last_hash = expected_hash
+    if not report.errors and pending:
+        start = pending_start or (committed_index, committed_offset)
+        if repair:
+            _truncate_batch_tail(base, segments, start[0], start[1], report)
+        else:
+            report.errors.append(
+                f"uncommitted batch of {len(pending)} transaction(s) "
+                "needs --repair"
+            )
+
+    report.rev = committed_rev
+    report.last_hash = committed_hash
     report.transactions = len(txns)
     report.committed_offset = committed_offset
     report.segment = committed_segment
     report.ok = not report.errors
 
-    anchor = _latest_anchor(base) if (base / ANCHOR_DIR).is_dir() else None
-    if anchor is not None and report.ok:
+    anchors = _load_anchors(base) if (base / ANCHOR_DIR).is_dir() else []
+    anchor = anchors[-1] if anchors else None
+    if anchors and report.ok:
         key = anchor_key if anchor_key is not None else _anchor_key_from_store(base)
         if key is None:
             report.errors.append("anchor exists but key is unavailable")
         else:
-            problem = _verify_anchor(anchor, key)
-            if problem:
-                report.errors.append(problem)
-            else:
-                try:
-                    anchor_rev = int(anchor["rev"])
-                    anchor_hash = str(anchor["hash"])
+            try:
+                previous_anchor = GENESIS_HASH
+                for item in anchors:
+                    problem = _verify_anchor(item, key)
+                    if problem:
+                        raise StoreCorrupt(problem)
+                    if str(item["prevAnchorHash"]) != previous_anchor:
+                        raise StoreCorrupt("anchor prevAnchorHash mismatch")
+                    anchor_rev = int(item["rev"])
+                    anchor_hash = str(item["hash"])
+                    if anchor_rev > report.rev:
+                        raise StoreCorrupt("journal truncated below anchor")
+                    if anchor_rev > 0 and rev_hashes.get(anchor_rev) != anchor_hash:
+                        raise StoreCorrupt("anchor hash does not match journal")
                     report.anchor_rev = anchor_rev
-                    if report.rev < anchor_rev:
+                    previous_anchor = anchor_hash
+                anchor = anchors[-1]
+            except (KeyError, TypeError, ValueError, StoreCorrupt) as exc:
+                report.errors.append(str(exc))
+        report.ok = not report.errors
+
+    if remote is not None and report.ok:
+        sink = Path(remote)
+        try:
+            remote_state = _latest_sink_state(sink)
+            remote_rev = int(remote_state["rev"])
+            remote_hash = str(remote_state["hash"])
+            remote_anchor_rev = int(remote_state.get("anchorRev", remote_rev))
+            remote_prev = str(remote_state.get("prevAnchorHash", GENESIS_HASH))
+            remote_key_id = str(remote_state.get("keyId", ""))
+            if anchor is None:
+                report.errors.append("no local anchor for remote watermark")
+            else:
+                key = anchor_key if anchor_key is not None else _anchor_key_from_store(base)
+                if key is None:
+                    report.errors.append("remote check needs anchor key")
+                elif remote_key_id and remote_key_id != _anchor_key_id(key):
+                    report.errors.append("remote watermark keyId mismatch")
+                elif report.rev < remote_rev:
+                    report.errors.append("journal below remote watermark")
+                elif remote_rev == 0:
+                    if remote_hash != GENESIS_HASH:
+                        report.errors.append("remote genesis hash mismatch")
+                elif rev_hashes.get(remote_rev) != remote_hash:
+                    report.errors.append("remote watermark hash mismatch")
+                elif int(anchor["rev"]) < remote_anchor_rev:
+                    report.errors.append("local anchor below remote watermark")
+                else:
+                    local_remote_anchor = next(
+                        (
+                            item
+                            for item in anchors
+                            if int(item["rev"]) == remote_anchor_rev
+                        ),
+                        None,
+                    )
+                    if local_remote_anchor is None:
                         report.errors.append(
-                            "journal truncated below anchor"
+                            "local anchor missing at remote watermark rev"
                         )
-                    elif anchor_rev > 0 and txns[anchor_rev - 1]["hash"] != anchor_hash:
-                        report.errors.append("anchor hash does not match journal")
-                except (KeyError, IndexError, TypeError, ValueError) as exc:
-                    report.errors.append(f"bad anchor rev/hash: {exc}")
+                    elif str(local_remote_anchor.get("prevAnchorHash", "")) != remote_prev:
+                        report.errors.append("remote prevAnchorHash mismatch")
+                    else:
+                        remote_anchor_path = (
+                            sink / "anchor" / f"{remote_anchor_rev:010d}.anchor"
+                        )
+                        if remote_anchor_path.is_file():
+                            remote_anchor = json.loads(
+                                remote_anchor_path.read_text(encoding="utf-8")
+                            )
+                            problem = _verify_anchor(remote_anchor, key)
+                            if problem:
+                                report.errors.append(f"remote {problem}")
+        except (OSError, ValueError, KeyError, TypeError, StoreCorrupt) as exc:
+            report.errors.append(f"remote watermark unavailable: {exc}")
         report.ok = not report.errors
 
     if report.ok:
@@ -479,7 +681,7 @@ def scan_store(
                 snap_hash = str(snap["hash"])
                 if snap_rev > report.rev:
                     report.errors.append("snapshot rev beyond journal")
-                elif snap_rev > 0 and txns[snap_rev - 1]["hash"] != snap_hash:
+                elif snap_rev > 0 and rev_hashes.get(snap_rev) != snap_hash:
                     report.errors.append("snapshot hash does not match journal")
                 elif snap_rev == 0 and snap_hash != GENESIS_HASH:
                     report.errors.append("snapshot genesis hash mismatch")
@@ -487,7 +689,7 @@ def scan_store(
                 report.errors.append(f"invalid snapshot: {exc}")
             report.ok = not report.errors
 
-    return ScanResult(report, state, txns, requests, events, anchor)
+    return ScanResult(report, state, txns, requests, events, anchor, rev_hashes)
 
 
 class Store:
@@ -500,6 +702,9 @@ class Store:
         commit_window: float = DEFAULT_COMMIT_WINDOW,
         watch_buffer: int = DEFAULT_WATCH_BUFFER,
         anchor_key: bytes | str | None = None,
+        anchor_sink: str | Path | None = None,
+        max_anchor_lag_rev: int = 5000,
+        max_anchor_lag_seconds: float = 300.0,
     ) -> None:
         if not 0.002 <= float(commit_window) <= 0.010:
             raise ValueError("commit_window must be in [0.002, 0.010] seconds")
@@ -511,6 +716,17 @@ class Store:
         self.segment_size = int(segment_size)
         self.commit_window = float(commit_window)
         self.watch_buffer = int(watch_buffer)
+        self._anchor_sink = (
+            Path(anchor_sink)
+            if anchor_sink is not None
+            else (
+                Path(os.environ["NEMEQ_ANCHOR_SINK"])
+                if os.environ.get("NEMEQ_ANCHOR_SINK")
+                else None
+            )
+        )
+        self._max_anchor_lag_rev = int(max_anchor_lag_rev)
+        self._max_anchor_lag_seconds = float(max_anchor_lag_seconds)
         self.path.mkdir(parents=True, exist_ok=True)
         for name in (LOG_DIR, SNAP_DIR, ANCHOR_DIR, STATE_DIR, VIEWS_DIR):
             (self.path / name).mkdir(parents=True, exist_ok=True)
@@ -541,6 +757,13 @@ class Store:
         self._segment_name = scan.report.segment
         self._anchor = scan.anchor
         self._last_anchor_rev = int(scan.anchor["rev"]) if scan.anchor else 0
+        self._last_anchor_hash = (
+            str(scan.anchor["hash"]) if scan.anchor else GENESIS_HASH
+        )
+        self._last_anchor_time = time.time()
+        self._sink_ack_rev = 0
+        self._last_ack_time = time.time()
+        self._anchor_status = "DEGRADED"
         self._read_only = False
         self._fail_reason: str | None = None
         self._lock = threading.RLock()
@@ -552,6 +775,7 @@ class Store:
         self._busy.set()
         self._subscribers: set[_Subscriber] = set()
         self._stats = {"commits": 0, "ops": 0, "max_batch": 0, "fsyncs": 0}
+        self._startup_anchor_check()
         self._write_meta()
         self._materialize_all()
         self._write_views()
@@ -564,17 +788,128 @@ class Store:
 
     def _init_anchor_key(self, supplied: bytes | str | None) -> bytes:
         if supplied is not None:
-            return supplied.encode("utf-8") if isinstance(supplied, str) else supplied
-        existing = _anchor_key_from_store(self.path)
-        if existing:
-            return existing
-        key = secrets.token_bytes(32)
-        _write_atomic(self.path / ANCHOR_KEY, key)
+            if isinstance(supplied, str):
+                try:
+                    key = bytes.fromhex(supplied)
+                except ValueError:
+                    key = supplied.encode("utf-8")
+            else:
+                key = supplied
+        else:
+            existing = _anchor_key_from_store(self.path)
+            if existing is not None:
+                key = existing
+            else:
+                key = secrets.token_bytes(32)
+                _write_atomic(self.path / ANCHOR_KEY, key)
+                _write_atomic(self.path / "anchor.pub", _anchor_public(key))
+        if len(key) != 32:
+            raise StoreCorrupt("anchor key must be a 32-byte Ed25519 seed")
         try:
             os.chmod(self.path / ANCHOR_KEY, 0o600)
         except OSError:
             pass
         return key
+
+    def _startup_anchor_check(self) -> None:
+        sink = self._anchor_sink
+        if sink is None:
+            self._anchor_status = "DEGRADED"
+            return
+        try:
+            remote = _latest_sink_state(sink)
+        except StoreCorrupt:
+            self._anchor_status = "DEGRADED"
+            return
+        remote_rev = int(remote["rev"])
+        remote_anchor_rev = int(remote.get("anchorRev", remote_rev))
+        if remote_anchor_rev > self._last_anchor_rev or remote_rev > self._rev:
+            raise StoreCorrupt("local watermark below remote watermark")
+        self._sink_ack_rev = remote_rev
+        self._last_ack_time = time.time()
+        self._anchor_status = "OK"
+
+    @property
+    def anchor_status(self) -> str:
+        return self._anchor_status
+
+    def _anchor_lag(self) -> int:
+        return max(0, self._rev - self._sink_ack_rev)
+
+    def _check_anchor_lag(self) -> None:
+        if self._anchor_status == "OK":
+            return
+        lag = self._anchor_lag()
+        if (
+            lag > self._max_anchor_lag_rev
+            or time.time() - self._last_ack_time > self._max_anchor_lag_seconds
+        ):
+            self._read_only = True
+            self._fail_reason = (
+                "anchor watermark lag exceeded; off-host sink unavailable"
+            )
+            error = StoreReadOnly(self._fail_reason)
+            error.code = 507
+            raise error
+
+    def _write_anchor_state(
+        self, rev: int, last_hash: str, ack_rev: int, status: str
+    ) -> None:
+        state = {
+            "lastAnchorRev": rev,
+            "lastAnchorHash": last_hash,
+            "sinkAckRev": ack_rev,
+            "lag": max(0, rev - ack_rev),
+            "updatedAt": time.time(),
+            "status": status,
+        }
+        _write_atomic(
+            self.path / ANCHOR_DIR / "state.json", _jcs(state) + b"\n"
+        )
+        alert = self.path / VIEWS_DIR / "alert.md"
+        if status == "DEGRADED":
+            _write_atomic(
+                alert,
+                (
+                    "# DEGRADED: off-host anchor watermark unavailable\n\n"
+                    f"lastAnchorRev={rev} sinkAckRev={ack_rev} lag={max(0, rev - ack_rev)}\n"
+                ).encode("utf-8"),
+            )
+        elif alert.exists():
+            alert.unlink()
+        self._anchor_status = status
+        self._sink_ack_rev = ack_rev
+
+    def _publish_anchor_sink(
+        self, payload: dict[str, Any], prev_anchor_hash: str
+    ) -> int | None:
+        sink = self._anchor_sink
+        if sink is None:
+            return None
+        try:
+            (sink / "anchor").mkdir(parents=True, exist_ok=True)
+            _write_atomic(sink / "anchor.pub", _anchor_public(self._anchor_key))
+            _write_atomic(
+                sink / "anchor" / f"{int(payload['rev']):010d}.anchor",
+                _jcs(payload) + b"\n",
+            )
+            _write_atomic(
+                sink / "state.json",
+                _jcs(
+                    {
+                        "rev": int(payload["rev"]),
+                        "hash": str(payload["hash"]),
+                        "anchorRev": int(payload["rev"]),
+                        "prevAnchorHash": prev_anchor_hash,
+                        "keyId": str(payload["keyId"]),
+                        "updatedAt": time.time(),
+                    }
+                )
+                + b"\n",
+            )
+            return int(payload["rev"])
+        except OSError:
+            return None
 
     # -- lifecycle -------------------------------------------------------
     def _check_open(self) -> None:
@@ -592,6 +927,11 @@ class Store:
             self._stopping = True
             self._cond.notify_all()
         self._writer.join(timeout=10.0)
+        if not self._read_only:
+            try:
+                self.anchor()
+            except Exception:
+                pass
         if self._lock_fd >= 0:
             fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
             os.close(self._lock_fd)
@@ -730,6 +1070,7 @@ class Store:
     # -- writes ----------------------------------------------------------
     def _submit(self, request: "_Request") -> Any:
         self._check_open()
+        self._check_anchor_lag()
         if self._read_only:
             raise StoreReadOnly(self._fail_reason or "store is read-only until fsck")
         with self._cond:
@@ -810,12 +1151,12 @@ class Store:
                     return
                 batch: list[_Request] = []
                 if self._stopping:
-                    while self._pending:
+                    while self._pending and len(batch) < 1000:
                         batch.append(self._pending.popleft())
                 else:
                     deadline = time.monotonic() + self.commit_window
                     while True:
-                        while self._pending:
+                        while self._pending and len(batch) < 1000:
                             batch.append(self._pending.popleft())
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
@@ -943,6 +1284,26 @@ class Store:
                 rev = next_rev
                 last_hash = record["hash"]
 
+            if new_txns:
+                commit = {
+                    "fmt": FORMAT,
+                    "type": "commit",
+                    "batchId": uuid.uuid4().hex,
+                    "fromRev": int(new_txns[0]["rev"]),
+                    "toRev": int(new_txns[-1]["rev"]),
+                    "count": len(new_txns),
+                    "batchHash": _batch_hash(new_txns),
+                    "prev": last_hash,
+                }
+                commit["hash"] = _commit_hash(commit)
+                commit_line = _jcs(commit) + b"\n"
+                if len(commit_line) > MAX_LINE_BYTES:
+                    for request in accepted:
+                        request.error = PayloadTooLarge("commit line exceeds 2 MiB")
+                    return
+                lines.append(commit_line)
+                last_hash = commit["hash"]
+
         if not lines:
             return
         segment = self._current_segment()
@@ -1035,9 +1396,9 @@ class Store:
         os.fsync(fd)
 
     def _maybe_anchor(self, rev: int, last_hash: str) -> None:
-        if rev < ANCHOR_INTERVAL:
-            return
-        if rev // ANCHOR_INTERVAL <= self._last_anchor_rev // ANCHOR_INTERVAL:
+        if rev - self._last_anchor_rev < ANCHOR_INTERVAL and (
+            time.time() - self._last_anchor_time < 60.0
+        ):
             return
         try:
             self.anchor()
@@ -1050,18 +1411,55 @@ class Store:
         with self._lock:
             rev = self._rev
             last_hash = self._last_hash
-        body = {"fmt": FORMAT, "rev": rev, "hash": last_hash}
-        signature = "hmac-sha256:" + hmac.new(
-            self._anchor_key, _jcs(body), hashlib.sha256
-        ).hexdigest()
+            if (
+                self._anchor is not None
+                and int(self._anchor["rev"]) == rev
+                and str(self._anchor["hash"]) == last_hash
+            ):
+                if self._anchor_sink is not None and self._anchor_status != "OK":
+                    ack = self._publish_anchor_sink(
+                        self._anchor,
+                        str(self._anchor.get("prevAnchorHash", GENESIS_HASH)),
+                    )
+                    self._write_anchor_state(
+                        rev,
+                        last_hash,
+                        ack if ack is not None else self._sink_ack_rev,
+                        "OK" if ack is not None else "DEGRADED",
+                    )
+                    self._write_meta()
+                return rev
+            prev_anchor_hash = (
+                str(self._anchor["hash"]) if self._anchor else GENESIS_HASH
+            )
+        body = {
+            "fmt": FORMAT,
+            "rev": rev,
+            "hash": last_hash,
+            "prevAnchorHash": prev_anchor_hash,
+            "keyId": _anchor_key_id(self._anchor_key),
+        }
+        signature = "ed25519:" + _anchor_private(self._anchor_key).sign(
+            _jcs(body)
+        ).hex()
         payload = {**body, "sig": signature}
         _write_atomic(
             self.path / ANCHOR_DIR / f"{rev:010d}.anchor",
             _jcs(payload) + b"\n",
         )
+        ack_rev = self._publish_anchor_sink(payload, prev_anchor_hash)
+        status = "OK" if ack_rev is not None else "DEGRADED"
         with self._lock:
             self._last_anchor_rev = rev
+            self._last_anchor_hash = last_hash
+            self._last_anchor_time = time.time()
             self._anchor = payload
+            if ack_rev is not None:
+                self._last_ack_time = time.time()
+                self._sink_ack_rev = ack_rev
+        self._write_anchor_state(
+            rev, last_hash, ack_rev if ack_rev is not None else self._sink_ack_rev, status
+        )
         self._write_meta()
         return rev
 
@@ -1150,11 +1548,17 @@ class Store:
         for old in snapshots[:-2]:
             old.unlink()
         self._write_views()
+        self.anchor()
         return rev
 
-    def fsck(self, repair: bool = False) -> FsckReport:
+    def fsck(
+        self, repair: bool = False, remote: str | Path | None = None
+    ) -> FsckReport:
         report = scan_store(
-            self.path, repair=repair, anchor_key=self._anchor_key
+            self.path,
+            repair=repair,
+            anchor_key=self._anchor_key,
+            remote=remote,
         ).report
         if report.ok and self._read_only:
             self._read_only = False

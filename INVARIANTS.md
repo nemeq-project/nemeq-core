@@ -1,79 +1,88 @@
-# TEXTSTORE v0.2 — invariants (gate)
+# TEXTSTORE v0.3.1 — invariants (gate)
 
-This file is normative for `massaru/store.py`, `massaru/store_fsck.py` and
-`nqctl store`.  A change that violates an invariant is a gate failure.
+Normative for `massaru/store.py`, `massaru/store_fsck.py`, `nqctl store`.
+A change that violates an invariant is a gate failure.
 
 ## 1. Source of truth and layout
 
 - `log/*.jsonl` is the only source of truth. `state/`, `snap/`, `views/`,
-  `meta.json` are derived/materialized and may be regenerated.
-- One line = one atomic transaction. A line has
-  `fmt,rev,prev,ts,actor,requestId,txn,hash` (exactly the format in
-  `TEXTSTORE_v0.2.md` §2).
-- No SQL, no LMDB, no external store in v1.
+  `meta.json` are derived/materialized; `meta` is a cache.
+- A batch is N transaction lines followed by a **commit line**
+  `{"type":"commit","batchId","fromRev","toRev","count","batchHash",...}`;
+  the commit line is part of the hash-chain.
+- Transaction hash covers `fmt/rev/prev/ts/actor/requestId/txn` with
+  RFC 8785-style JCS. Commit hash covers its framing fields and `prev`.
+- No SQL/LMDB/external store in v1.
 
-## 2. Integrity
+## 2. Batch replay / integrity
 
-- `hash = sha256(JCS({fmt,rev,prev,ts,actor,requestId,txn}))`; JCS is
-  RFC 8785-style canonical JSON (sorted keys, UTF-8, no NaN/Inf).
-- `prev` is the previous line's `hash`; the chain is global. `rev` starts at
-  1 and never repeats.
-- `fmt` is `1`; unknown formats are rejected.
-- Every 1 000 revisions a signed anchor is written to
-  `anchor/<rev>.anchor` (`{fmt,rev,hash,sig}`, HMAC-SHA256 with the
-  apiserver key; the key and anchors must also be copied off-host).
-- Truncation below the latest anchor is `fsck` FAIL, not a torn tail.
-- A torn tail is only a final line without `\n`; it is trimmed by startup or
-  `nqctl store fsck --repair`. A corrupt middle is never auto-repaired.
+- Transactions are buffered; they are applied **only** when a commit covers
+  their `rev` range and `batchHash`. A valid prefix after the last commit
+  without a commit is an **uncommitted batch**, not a valid suffix.
+- On startup/`fsck --repair`, an uncommitted tail is truncated from the first
+  pending transaction (`batchStartOffset`) and reported as repaired. A
+  corrupt commit in the middle is `fsck` FAIL, never auto-applied.
+- `committedOffset` is the end of the last commit; only transactions at or
+  below it are visible to reads/watch/request-id dedup. `meta` may lag and
+  never overrides the journal.
+- `rev` starts at 1, never repeats; `prev` is the previous chain hash;
+  commit lines carry the chain forward.
+- Write failure handling: write all transaction lines + commit, fsync; on
+  write/fsync/ENOSPC/EIO — `ftruncate(batchStartOffset)`, fsync, read-only
+  fail-stop (5xx/507) until clean `fsck`/restore. `rev` does not move.
 
-## 3. Write path / durability
+## 3. Durability / single writer
 
-- Exactly one writer holds `flock` on `lock`; a second writer gets `EBUSY`.
-- A batch is built under the writer lock. CAS (`expected_rev` /
-  `expected_rv`) is evaluated while building, not after writing.
-- Each batch remembers `batchStartOffset`, writes all lines, then `fsync`.
-  `committedOffset` and `rev` are published only after that fsync.
-- On write/fsync/ENOSPC/EIO failure: `ftruncate(batchStartOffset)`, `fsync`,
-  and the store enters **read-only fail-stop**; the client gets a 5xx, `rev`
-  does not move. Only `fsck` (clean) / `fsck --repair` (torn tail) or restore
-  clears read-only.
-- Readers and watch see only transactions at/below `committedOffset` and
-  only after publication.
-- Group commit window is 2–10 ms; one fsync per batch; no acknowledgement
-  before fsync.
+- One writer holds `flock` on `lock`; a second writer gets `EBUSY`.
+- CAS is checked during batch build under the writer lock. N concurrent
+  updates with one `resourceVersion` → exactly one success.
+- Group commit window 2–10 ms; one fsync per batch; response only after the
+  journal fsync.
+- `requestId` dedup is rebuilt from committed transactions; an incomplete
+  batch never contributes to dedup.
 
-## 4. CAS and API values
+## 4. Anchors / off-host watermark
 
-- `rev` is the global journal revision; `resourceVersion` is
-  `"<rev>-<uid8>"` and is the CAS token for an object.
-- `expected_rev` accepts a full `resourceVersion` (or a legacy integer
-  rev); a mismatch is `409 Conflict`.
-- `generation` increases when `spec` changes; `status.observedGeneration`
-  is owned by the controller. `dryRun` validates/CAS but writes nothing.
-- `requestId` dedup is reconstructed from the journal; a repeat in the
-  window returns the same result and does not advance `rev`.
+- Ed25519 anchors: `anchor/<rev>.anchor` =
+  `{fmt,rev,hash,prevAnchorHash,keyId,sig}`. `prevAnchorHash` chains anchors;
+  private seed is local 0600/HSM, public key/sink off-host.
+- Anchor on snapshot/clean stop and every 60 s or 1 000 rev; off-host sink
+  ack updates `anchor/state.json`:
+  `{lastAnchorRev,lastAnchorHash,sinkAckRev,lag,updatedAt,status}`.
+- Sink unavailable → `DEGRADED` + alert; local anchors continue. Writes are
+  allowed until `max_anchor_lag` = 5 000 rev / 5 min, then 507 read-only.
+- In `DEGRADED`, the remote truncation check is deferred until catch-up;
+  local anchor/chain checks still run. `fsck --remote` explicitly checks the
+  off-host watermark and fails if unavailable/inconsistent.
+- Truncation below the latest local anchor or remote watermark is `fsck`
+  FAIL, not a torn tail. A torn final line is the only auto-repair case.
 
 ## 5. Watch
 
-- Subscribe first (register cursor), then replay backlog, then live; no gap.
-- Events are deduplicated by `(rev, seq)`.
-- A subscriber buffer is bounded (default 10 000 events). Overflow closes
-  the stream with `410 Gone` and a revision for relist; one slow watcher
-  never blocks the writer or other watchers.
-- `watch` is a read path: it never holds the writer lock while yielding.
+- Subscribe first (register cursor), replay backlog, then live; dedup by
+  `(rev, seq)`; publication only after fsync.
+- Bounded per-subscriber buffer 10 000; overflow closes with `410 Gone` and
+  a revision for relist; one slow watcher does not block the writer.
 
-## 6. Format limits
+## 6. Format / API
 
-- Values are normalized to NFC before hashing/writing; invalid UTF-8 is 400.
-- Value ≤ 1 MiB; journal line ≤ 2 MiB; larger is 413 and never enters the
-  journal. Keys match `resource/name` with `name` `[a-z0-9][a-z0-9.-]{0,62}`.
+- `fmt=1`; NFC; strict UTF-8; value ≤1 MiB; line ≤2 MiB → 413.
+- `rev` is the global watch/bookmark revision; `resourceVersion` is
+  `"<rev>-<uid8>"` and the CAS token. `generation` tracks spec changes;
+  `status.observedGeneration` is controller-owned.
+- `dryRun`, `limit/continue`, `Lease`, 409/410/413/422/503/507 per
+  `API_SCHEMA.md`.
 
-## 7. SLO (v1 target; measured on target disk)
+## 7. SLO (only after 10-minute soak)
 
 | Metric | SLO |
 |---|---|
 | Read p99 (get/list) | ≤ 50 ms |
-| Write p99 (put/delete) | ≤ 150 ms at ≤ 50 rps |
-| Write p95 | ≤ 100 ms |
-| Replay 1M rev | ≤ 60 s (snapshot + tail) |
-| fsck 1M rev | ≤ 120 s |
+| Write p99 A | ≤ 150 ms at ≤20 rps, window 10 ms |
+| Write p99 B | ≤ 250 ms at ≤50 rps, window 25 ms |
+| Write p95 | ≤100 ms (A) / ≤180 ms (B) |
+| Replay 1M rev | ≤60 s (snapshot + tail) |
+| fsck / fsck --remote 1M rev | ≤120 s / ≤180 s |
+
+A profile without a 10-minute soak is **outside SLO**. If a profile fails,
+lower rps/widen the window; do not claim an unverified SLO.

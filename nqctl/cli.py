@@ -22,7 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     actions = store.add_subparsers(dest="action", required=True)
     fsck = actions.add_parser("fsck", help="validate journal; optional repair")
     fsck.add_argument("--repair", action="store_true")
-    actions.add_parser("verify", help="strict journal validation")
+    fsck.add_argument("--remote", default=None, help="off-host watermark dir")
+    verify = actions.add_parser("verify", help="strict journal validation")
+    verify.add_argument("--remote", default=None, help="off-host watermark dir")
     actions.add_parser("snapshot", help="take a state snapshot")
     return parser
 
@@ -35,9 +37,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"snapshotRev": rev}))
         return 0
     report = (
-        store_fsck.fsck(path, repair=args.repair)
+        store_fsck.fsck(path, repair=args.repair, remote=args.remote)
         if args.action == "fsck"
-        else store_fsck.verify(path)
+        else store_fsck.verify(path, remote=args.remote)
     )
     print(json.dumps(report.to_dict(), ensure_ascii=False))
     return 0 if report.ok else 1

@@ -67,7 +67,11 @@ resourceVersion; leases are not a second source of truth.
 - `watch(fromRev)` → events `{rev, seq, type, key, resourceVersion, value?}`;
   `ADDED/MODIFIED/DELETED`; dedup by `(rev, seq)`; bounded buffer 10 000,
   overflow `410 Gone`.
-- `snapshot()` → rev; `fsck(repair=False)` → report.
+- `snapshot()` → rev; `fsck(repair=False, remote=None)` → report.
+- `fsck --remote` checks the off-host Ed25519/watermark state; local
+  anchors use `prevAnchorHash` chaining.
+- A batch is visible only after its commit line; `committedOffset` is the
+  end of the last commit.
 
 ## 5. Errors / status codes
 
@@ -79,7 +83,7 @@ resourceVersion; leases are not a second source of truth.
 | 413 | value > 1 MiB or journal line > 2 MiB |
 | 422 | semantically invalid resource |
 | 503 | store fail-stop/read-only |
-| 507 | insufficient storage; fail-stop |
+| 507 | insufficient storage or anchor-lag fail-stop |
 
 Errors are RFC 7807-shaped (`type`, `title`, `status`, `detail`, `reason`).
 Admission-denied requests are audited; no secret values are logged.

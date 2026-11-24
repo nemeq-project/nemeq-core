@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 import threading
@@ -22,6 +23,7 @@ from massaru.store import (
     StoreCorrupt,
     StoreReadOnly,
     WatchGone,
+    _batch_hash,
     _jcs,
     _normalize,
     _record_hash,
@@ -84,6 +86,8 @@ def test_restart_and_meta(tmp_path: Path):
     store = Store(path)
     put(store, "epishu/e1", 1, expected_rev=0)
     put(store, "epishu/e1", 2, expected_rev=1)
+    live_meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+    assert live_meta["rev"] == 2
     store.close()
 
     meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
@@ -195,9 +199,9 @@ def test_corrupt_middle_fails_fsck_and_start(tmp_path: Path):
 
     segment = sorted((path / "log").glob("*.jsonl"))[-1]
     lines = segment.read_text(encoding="utf-8").splitlines()
-    record = json.loads(lines[1])
+    record = json.loads(lines[2])
     record["txn"][0]["value"]["spec"]["n"] = 999
-    lines[1] = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    lines[2] = json.dumps(record, sort_keys=True, separators=(",", ":"))
     segment.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     report = store_fsck.fsck(path)
@@ -224,7 +228,7 @@ def test_corrupt_prev_chain_fails(tmp_path: Path):
     put(store, "epishu/e2", 2, expected_rev=0)
     store.close()
     segment = sorted((path / "log").glob("*.jsonl"))[-1]
-    _rewrite_record(segment, 1, lambda record: record.__setitem__("prev", GENESIS_HASH))
+    _rewrite_record(segment, 2, lambda record: record.__setitem__("prev", GENESIS_HASH))
     report = store_fsck.fsck(path)
     assert report.ok is False
     assert any("prev mismatch" in error for error in report.errors)
@@ -239,7 +243,7 @@ def test_duplicate_rev_fails(tmp_path: Path):
     put(store, "epishu/e2", 2, expected_rev=0)
     store.close()
     segment = sorted((path / "log").glob("*.jsonl"))[-1]
-    _rewrite_record(segment, 1, lambda record: record.__setitem__("rev", 1))
+    _rewrite_record(segment, 2, lambda record: record.__setitem__("rev", 1))
     report = store_fsck.fsck(path)
     assert report.ok is False
     assert any("rev mismatch" in error for error in report.errors)
@@ -518,6 +522,206 @@ def test_watch_1000_writes_no_loss_or_duplicates(tmp_path: Path):
     assert [event["rev"] for event in events] == list(range(1, 1001))
 
 
+
+def test_commit_line_frames_transaction(tmp_path: Path):
+    path = tmp_path / "store"
+    with Store(path) as store:
+        store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    lines = sorted((path / "log").glob("*.jsonl"))[-1].read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert [json.loads(line).get("type", "txn") for line in lines] == [
+        "txn",
+        "commit",
+    ]
+    commit = json.loads(lines[-1])
+    assert commit["fromRev"] == 1
+    assert commit["toRev"] == 1
+    assert commit["count"] == 1
+    assert commit["batchHash"] == _batch_hash([json.loads(lines[0])])
+
+
+def test_uncommitted_batch_is_truncated_on_start(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.close()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    before = segment.read_bytes()
+    # Append a valid rev-2 transaction without its commit.
+    last = json.loads(before.splitlines()[-1])
+    record = {
+        "fmt": 1,
+        "rev": 2,
+        "prev": last["hash"],
+        "ts": "2026-11-24T00:00:00+00:00",
+        "actor": "",
+        "requestId": "",
+        "txn": [{"op": "put", "key": "epishu/e2", "value": {"spec": {}}}],
+    }
+    record["hash"] = _record_hash(record)
+    with segment.open("ab") as handle:
+        handle.write(_jcs(record) + b"\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    uncommitted_size = segment.stat().st_size
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("uncommitted" in error for error in report.errors)
+    with Store(path) as reopened:
+        assert reopened.get("epishu/e2") is None
+        assert reopened.fsck().rev == 1
+    assert segment.stat().st_size < uncommitted_size
+
+
+def test_kill9_mid_write_leaves_no_uncommitted_state(tmp_path: Path):
+    import subprocess
+    import sys
+
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.close()
+    script = r"""
+import os, sys
+from massaru.store import Store
+
+path = sys.argv[1]
+store = Store(path, commit_window=0.002)
+
+def crash(segment, lines):
+    with segment.open("ab") as handle:
+        # Write the transaction, deliberately not the commit line.
+        handle.write(b"".join(lines[:-1]))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os._exit(9)
+
+store._append_lines = crash
+store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 9, (completed.returncode, completed.stderr)
+    with Store(path) as reopened:
+        assert reopened.get("epishu/e1") is not None
+        assert reopened.get("epishu/e2") is None
+        assert reopened.fsck().rev == 1
+
+
+
+def test_ed25519_anchor_chain_and_remote_watermark(tmp_path: Path):
+    sink = tmp_path / "sink"
+    path = tmp_path / "store"
+    store = Store(path, anchor_sink=sink)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    first = json.loads(
+        sorted((path / "anchor").glob("*.anchor"))[0].read_text(encoding="utf-8")
+    )
+    assert first["prevAnchorHash"] == GENESIS_HASH
+    assert first["keyId"]
+    assert first["sig"].startswith("ed25519:")
+    store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    second = json.loads(
+        sorted((path / "anchor").glob("*.anchor"))[-1].read_text(encoding="utf-8")
+    )
+    assert second["prevAnchorHash"] == first["hash"]
+    assert store.anchor_status == "OK"
+    assert (sink / "state.json").is_file()
+    store.close()
+
+    report = store_fsck.fsck(path, remote=sink)
+    assert report.ok is True, report.errors
+    assert report.anchor_rev == 2
+
+
+
+def test_remote_watermark_startup_and_catchup(tmp_path: Path):
+    sink = tmp_path / "sink"
+    path = tmp_path / "store"
+    store = Store(path, anchor_sink=sink)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    assert store.anchor_status == "OK"
+    store.close()
+    reopened = Store(path, anchor_sink=sink)
+    try:
+        assert reopened.anchor_status == "OK"
+        reopened.put("epishu/e2", {"spec": {}}, expected_rev=0)
+        reopened.anchor()
+        assert reopened.anchor_status == "OK"
+    finally:
+        reopened.close()
+    assert store_fsck.fsck(path, remote=sink).ok is True
+
+
+def test_remote_watermark_rejects_lagging_local_anchor(tmp_path: Path):
+    sink = tmp_path / "sink"
+    path = tmp_path / "store"
+    store = Store(path, anchor_sink=sink)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    store.close()
+
+    # Simulate a host that lost the rev-2 anchor while the off-host watermark
+    # still knows about it, and whose local journal is at rev 1.
+    anchor_two = sorted((path / "anchor").glob("*.anchor"))[-1]
+    anchor_two.unlink()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    lines = segment.read_text(encoding="utf-8").splitlines()
+    # Two committed batches: txn/commit/txn/commit.  Retain only batch one.
+    segment.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
+    report = store_fsck.fsck(path, remote=sink)
+    assert report.ok is False
+    assert any("remote" in error or "anchor" in error for error in report.errors)
+
+
+def test_degraded_anchor_lag_turns_read_only(tmp_path: Path):
+    sink = tmp_path / "missing" / "sink"
+    store = Store(
+        tmp_path / "store",
+        anchor_sink=sink,
+        max_anchor_lag_rev=1,
+        max_anchor_lag_seconds=100.0,
+    )
+    assert store.anchor_status == "DEGRADED"
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+    with pytest.raises(StoreReadOnly) as exc:
+        store.put("epishu/e3", {"spec": {}}, expected_rev=0)
+    assert exc.value.code == 507
+    assert store.read_only is True
+    store.close()
+
+
+def test_anchor_ed25519_signature_is_checked(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    store.close()
+    anchor = sorted((path / "anchor").glob("*.anchor"))[0]
+    payload = json.loads(anchor.read_text(encoding="utf-8"))
+    payload["sig"] = "ed25519:" + "0" * 128
+    anchor.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("signature" in error for error in report.errors)
+
+
 def test_anchor_truncation_fails(tmp_path: Path):
     path = tmp_path / "store"
     store = Store(path)
@@ -528,7 +732,8 @@ def test_anchor_truncation_fails(tmp_path: Path):
     store.close()
     segment = sorted((path / "log").glob("*.jsonl"))[-1]
     lines = segment.read_text(encoding="utf-8").splitlines()
-    segment.write_text("\n".join(lines[:1]) + "\n", encoding="utf-8")
+    # Keep the first committed batch (txn + commit); anchor is at rev 3.
+    segment.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
     report = store_fsck.fsck(path)
     assert report.ok is False
     assert any("below anchor" in error for error in report.errors)
@@ -605,7 +810,7 @@ def test_anchor_signature_is_checked(tmp_path: Path):
     store.close()
     anchor = sorted((path / "anchor").glob("*.anchor"))[0]
     payload = json.loads(anchor.read_text(encoding="utf-8"))
-    payload["sig"] = "hmac-sha256:" + "0" * 64
+    payload["sig"] = "ed25519:" + "0" * 128
     anchor.write_text(
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
