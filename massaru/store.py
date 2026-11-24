@@ -1,16 +1,19 @@
-"""TEXTSTORE v0.1 — append-only JSONL journal + materialized state.
+"""TEXTSTORE v0.2 — append-only JSONL journal with fail-stop commit.
 
-One line in ``log/<segment>.jsonl`` is one transaction::
+One line is one transaction::
 
-    {"rev":N,"prev":"sha256:...","ts":"...","actor":"...",
+    {"fmt":1,"rev":N,"prev":"sha256:...","ts":"...","actor":"...",
      "requestId":"...","txn":[{"op":"put|del","key":"...","value":...}],
      "hash":"sha256:..."}
 
-The hash covers ``{rev, prev, txn}``.  ``state/`` is a materialization,
-``snap/`` accelerates restore, ``views/`` is for humans.  One writer holds
-``lock`` via flock; a background writer performs 2-10 ms group commits and
-answers only after fsync.  Torn tail in the last segment is trimmed on start;
-a corrupt middle line fails fsck and blocks start.
+``hash = sha256(JCS({fmt,rev,prev,ts,actor,requestId,txn}))``.  ``state/`` is
+materialization, ``snap/`` restore acceleration, ``anchor/`` signed off-host
+anchors, ``views/`` human output.  One writer holds ``lock`` via flock; a
+background writer batches for 2-10 ms and publishes only after fsync.
+
+Write/fsync/ENOSPC/EIO failure: ftruncate to batchStartOffset, fsync, then
+the store is read-only until ``fsck`` clears it.  ``committedOffset`` is the
+visibility boundary.
 """
 
 from __future__ import annotations
@@ -19,16 +22,20 @@ import copy
 import csv
 import fcntl
 import hashlib
+import hmac
 import json
 import os
+import re
+import secrets
 import tempfile
 import threading
 import time
 import tomllib
-from datetime import datetime, timezone
+import unicodedata
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -40,61 +47,125 @@ LOCK_NAME = "lock"
 META_NAME = "meta.json"
 LOG_DIR = "log"
 SNAP_DIR = "snap"
+ANCHOR_DIR = "anchor"
 STATE_DIR = "state"
 VIEWS_DIR = "views"
+ANCHOR_KEY = "anchor.key"
 DEFAULT_SEGMENT_SIZE = 64 * 1024 * 1024
 DEFAULT_COMMIT_WINDOW = 0.005
+DEFAULT_WATCH_BUFFER = 10_000
+MAX_VALUE_BYTES = 1 * 1024 * 1024
+MAX_LINE_BYTES = 2 * 1024 * 1024
+ANCHOR_INTERVAL = 1000
+KEY_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,62}/[a-z0-9][a-z0-9.-]{0,62}$")
 
 
 class StoreError(Exception):
-    """Base store refusal."""
+    """Base store refusal; ``code`` maps to an API status."""
+
+    code = 500
 
 
 class StoreBusy(StoreError):
-    """Another writer holds flock."""
+    code = 409
 
 
 class ConflictError(StoreError):
-    """CAS failure: expectedRev does not match the object."""
+    code = 409
 
 
 class StoreCorrupt(StoreError):
-    """Journal/hash-chain is corrupt; restore is required."""
+    code = 500
+
+
+class StoreReadOnly(StoreError):
+    code = 503
 
 
 class DurabilityError(StoreError):
-    """The batch was written but not fsynced; not acknowledged."""
+    code = 500
 
 
-def _canonical(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+class PayloadTooLarge(StoreError):
+    code = 413
 
 
-def _hash_bytes(value: Any) -> str:
-    return "sha256:" + hashlib.sha256(_canonical(value)).hexdigest()
+class InvalidRequest(StoreError):
+    code = 400
 
 
-def _txn_hash(rev: int, prev: str, txn: list[dict[str, Any]]) -> str:
-    return _hash_bytes({"rev": rev, "prev": prev, "txn": txn})
+class WatchGone(StoreError):
+    code = 410
+
+    def __init__(self, message: str, rev: int) -> None:
+        super().__init__(message)
+        self.rev = rev
 
 
-def _safe_key(key: str) -> list[str]:
-    if not isinstance(key, str) or not key or "\x00" in key:
-        raise StoreError("key must be a non-empty string without NUL")
-    parts = key.split("/")
-    if any(part in {"", ".", ".."} for part in parts):
-        raise StoreError(f"unsafe key: {key!r}")
-    return parts
+def _nfc(value: str) -> str:
+    return unicodedata.normalize("NFC", value)
+
+
+def _normalize(value: Any) -> Any:
+    if isinstance(value, str):
+        return _nfc(value)
+    if isinstance(value, list):
+        return [_normalize(item) for item in value]
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise InvalidRequest("object keys must be strings")
+            result[_nfc(key)] = _normalize(item)
+        return result
+    return value
+
+
+def _jcs(value: Any) -> bytes:
+    """RFC 8785-style canonical JSON for the subset used by the store."""
+    try:
+        text = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise InvalidRequest(f"not canonical JSON: {exc}") from exc
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise InvalidRequest(f"not valid UTF-8: {exc}") from exc
+
+
+def _sha(value: Any) -> str:
+    return "sha256:" + hashlib.sha256(_jcs(value)).hexdigest()
+
+
+def _record_hash(record: dict[str, Any]) -> str:
+    body = {
+        "fmt": int(record["fmt"]),
+        "rev": int(record["rev"]),
+        "prev": str(record["prev"]),
+        "ts": str(record["ts"]),
+        "actor": str(record["actor"]),
+        "requestId": str(record["requestId"]),
+        "txn": record["txn"],
+    }
+    return _sha(body)
+
+
+def _safe_key(key: str) -> str:
+    key = _nfc(key)
+    if not KEY_RE.match(key):
+        raise InvalidRequest(f"invalid key: {key!r}")
+    return key
 
 
 def _state_path(base: Path, key: str) -> Path:
-    parts = _safe_key(key)
-    return base / STATE_DIR / Path(*parts).with_suffix(".json")
+    resource, name = _safe_key(key).split("/", 1)
+    return base / STATE_DIR / resource / f"{name}.json"
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -106,9 +177,32 @@ def _write_atomic(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
+        try:
+            dir_fd = os.open(
+                path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
+
+
+def _anchor_key_from_store(path: Path) -> bytes | None:
+    env = os.environ.get("NEMEQ_ANCHOR_KEY")
+    if env:
+        return env.encode("utf-8")
+    key_path = path / ANCHOR_KEY
+    if key_path.is_file():
+        try:
+            return key_path.read_bytes()
+        except OSError:
+            return None
+    return None
 
 
 @dataclass
@@ -121,6 +215,9 @@ class FsckReport:
     truncated_bytes: int = 0
     segments: int = 0
     transactions: int = 0
+    committed_offset: int = 0
+    segment: str = ""
+    anchor_rev: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -132,6 +229,9 @@ class FsckReport:
             "truncatedBytes": self.truncated_bytes,
             "segments": self.segments,
             "transactions": self.transactions,
+            "committedOffset": self.committed_offset,
+            "segment": self.segment,
+            "anchorRev": self.anchor_rev,
         }
 
 
@@ -141,18 +241,53 @@ class ScanResult:
     state: dict[str, dict[str, Any]]
     txns: list[dict[str, Any]]
     request_cache: dict[str, Any]
+    events: list[dict[str, Any]]
+    anchor: dict[str, Any] | None
 
 
 def _log_segments(path: Path) -> list[Path]:
     return sorted((path / LOG_DIR).glob("*.jsonl"))
 
 
-def scan_store(path: str | Path, repair: bool = False) -> ScanResult:
-    """Scan the append-only log without taking the writer lock.
+def _latest_anchor(path: Path) -> dict[str, Any] | None:
+    anchors = sorted((path / ANCHOR_DIR).glob("*.anchor"))
+    if not anchors:
+        return None
+    try:
+        payload = json.loads(anchors[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StoreCorrupt(f"cannot read anchor: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise StoreCorrupt("anchor is not an object")
+    return payload
 
-    A torn tail in the last segment is trimmed only with ``repair=True``.
-    A corrupt middle line or a broken chain is reported, never repaired.
-    """
+
+def _verify_anchor(
+    payload: dict[str, Any], key: bytes
+) -> str | None:
+    try:
+        body = {
+            "fmt": int(payload["fmt"]),
+            "rev": int(payload["rev"]),
+            "hash": str(payload["hash"]),
+        }
+        signature = str(payload["sig"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StoreCorrupt(f"bad anchor shape: {exc}") from exc
+    expected = "hmac-sha256:" + hmac.new(
+        key, _jcs(body), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return "anchor signature mismatch"
+    return None
+
+
+def scan_store(
+    path: str | Path,
+    repair: bool = False,
+    anchor_key: bytes | None = None,
+) -> ScanResult:
+    """Scan journal without taking the writer lock."""
     base = Path(path)
     segments = _log_segments(base)
     report = FsckReport(
@@ -163,9 +298,12 @@ def scan_store(path: str | Path, repair: bool = False) -> ScanResult:
     )
     state: dict[str, dict[str, Any]] = {}
     txns: list[dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     requests: dict[str, Any] = {}
     expected_rev = 1
     expected_hash = GENESIS_HASH
+    committed_offset = 0
+    committed_segment = segments[-1].name if segments else ""
 
     for segment_index, segment in enumerate(segments):
         is_last = segment_index == len(segments) - 1
@@ -204,16 +342,22 @@ def scan_store(path: str | Path, repair: bool = False) -> ScanResult:
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 report.errors.append(f"invalid JSON at rev {expected_rev}: {exc}")
                 break
-            if not isinstance(record, dict):
-                report.errors.append(f"record at rev {expected_rev} is not object")
-                break
             try:
+                if _normalize(record) != record:
+                    report.errors.append(f"non-NFC record at rev {expected_rev}")
+                    break
+                fmt = int(record.get("fmt", FORMAT))
                 rev = int(record["rev"])
                 prev = str(record["prev"])
-                txn = record["txn"]
                 digest = str(record["hash"])
-            except (KeyError, TypeError, ValueError) as exc:
-                report.errors.append(f"bad record shape at rev {expected_rev}: {exc}")
+                txn = record["txn"]
+            except (InvalidRequest, KeyError, TypeError, ValueError) as exc:
+                report.errors.append(
+                    f"bad record shape at rev {expected_rev}: {exc}"
+                )
+                break
+            if fmt != FORMAT:
+                report.errors.append(f"unsupported fmt {fmt} at rev {rev}")
                 break
             if rev != expected_rev:
                 report.errors.append(
@@ -226,26 +370,58 @@ def scan_store(path: str | Path, repair: bool = False) -> ScanResult:
             if not isinstance(txn, list) or not txn:
                 report.errors.append(f"txn at rev {rev} is not a non-empty list")
                 break
-            if digest != _txn_hash(rev, prev, txn):
-                report.errors.append(f"hash mismatch at rev {rev}")
+            try:
+                if digest != _record_hash(record):
+                    report.errors.append(f"hash mismatch at rev {rev}")
+                    break
+            except (KeyError, TypeError, ValueError, InvalidRequest) as exc:
+                report.errors.append(f"bad hash input at rev {rev}: {exc}")
+                break
+            if len(line) > MAX_LINE_BYTES:
+                report.errors.append(f"line at rev {rev} exceeds 2 MiB")
                 break
             try:
-                for operation in txn:
+                for sequence, operation in enumerate(txn):
                     if not isinstance(operation, dict):
-                        raise StoreError("operation is not object")
+                        raise InvalidRequest("operation is not object")
                     op = operation.get("op")
-                    key = operation.get("key")
-                    _safe_key(key)
+                    key = _safe_key(operation.get("key"))
                     if op == "put":
                         value = operation.get("value")
                         if not isinstance(value, dict):
-                            raise StoreError("put value is not object")
+                            raise InvalidRequest("put value is not object")
+                        event_type = "ADDED" if key not in state else "MODIFIED"
+                        resource_version = str(value.get("resourceVersion", ""))
                         state[key] = copy.deepcopy(value)
+                        events.append(
+                            {
+                                "rev": rev,
+                                "seq": sequence,
+                                "type": event_type,
+                                "key": key,
+                                "resourceVersion": resource_version,
+                                "value": copy.deepcopy(value),
+                            }
+                        )
                     elif op == "del":
-                        state.pop(key, None)
+                        previous = state.pop(key, None)
+                        events.append(
+                            {
+                                "rev": rev,
+                                "seq": sequence,
+                                "type": "DELETED",
+                                "key": key,
+                                "resourceVersion": (
+                                    str(previous.get("resourceVersion", ""))
+                                    if previous
+                                    else ""
+                                ),
+                                "value": None,
+                            }
+                        )
                     else:
-                        raise StoreError(f"unknown op {op!r}")
-            except StoreError as exc:
+                        raise InvalidRequest(f"unknown op {op!r}")
+            except (StoreError, InvalidRequest) as exc:
                 report.errors.append(f"bad txn at rev {rev}: {exc}")
                 break
             request_id = record.get("requestId")
@@ -258,54 +434,87 @@ def scan_store(path: str | Path, repair: bool = False) -> ScanResult:
             expected_rev += 1
             expected_hash = digest
             offset += len(line)
+            committed_offset = offset
+            committed_segment = segment.name
         if report.errors:
             break
 
     report.rev = expected_rev - 1
     report.last_hash = expected_hash
     report.transactions = len(txns)
+    report.committed_offset = committed_offset
+    report.segment = committed_segment
     report.ok = not report.errors
 
-    # Verify the latest snapshot if present; snapshots are not truth.
-    snap_dir = base / SNAP_DIR
-    snapshots = sorted(snap_dir.glob("*.json")) if snap_dir.is_dir() else []
-    if snapshots and report.ok:
-        try:
-            snap = json.loads(snapshots[-1].read_text(encoding="utf-8"))
-            snap_rev = int(snap["rev"])
-            snap_hash = str(snap["hash"])
-            if snap_rev > report.rev:
-                report.errors.append("snapshot rev beyond journal")
-            elif snap_rev > 0 and txns[snap_rev - 1]["hash"] != snap_hash:
-                report.errors.append("snapshot hash does not match journal")
-            elif snap_rev == 0 and snap_hash != GENESIS_HASH:
-                report.errors.append("snapshot genesis hash mismatch")
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            report.errors.append(f"invalid snapshot: {exc}")
+    anchor = _latest_anchor(base) if (base / ANCHOR_DIR).is_dir() else None
+    if anchor is not None and report.ok:
+        key = anchor_key if anchor_key is not None else _anchor_key_from_store(base)
+        if key is None:
+            report.errors.append("anchor exists but key is unavailable")
+        else:
+            problem = _verify_anchor(anchor, key)
+            if problem:
+                report.errors.append(problem)
+            else:
+                try:
+                    anchor_rev = int(anchor["rev"])
+                    anchor_hash = str(anchor["hash"])
+                    report.anchor_rev = anchor_rev
+                    if report.rev < anchor_rev:
+                        report.errors.append(
+                            "journal truncated below anchor"
+                        )
+                    elif anchor_rev > 0 and txns[anchor_rev - 1]["hash"] != anchor_hash:
+                        report.errors.append("anchor hash does not match journal")
+                except (KeyError, IndexError, TypeError, ValueError) as exc:
+                    report.errors.append(f"bad anchor rev/hash: {exc}")
         report.ok = not report.errors
 
-    return ScanResult(report, state, txns, requests)
+    if report.ok:
+        snapshots = sorted((base / SNAP_DIR).glob("*.json"))
+        if snapshots:
+            try:
+                snap = json.loads(snapshots[-1].read_text(encoding="utf-8"))
+                snap_rev = int(snap["rev"])
+                snap_hash = str(snap["hash"])
+                if snap_rev > report.rev:
+                    report.errors.append("snapshot rev beyond journal")
+                elif snap_rev > 0 and txns[snap_rev - 1]["hash"] != snap_hash:
+                    report.errors.append("snapshot hash does not match journal")
+                elif snap_rev == 0 and snap_hash != GENESIS_HASH:
+                    report.errors.append("snapshot genesis hash mismatch")
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                report.errors.append(f"invalid snapshot: {exc}")
+            report.ok = not report.errors
+
+    return ScanResult(report, state, txns, requests, events, anchor)
 
 
 class Store:
-    """Single-writer JSONL store with group commit and CAS."""
+    """Single-writer TEXTSTORE with group commit, CAS, anchors and watch."""
 
     def __init__(
         self,
         path: str | Path,
         segment_size: int = DEFAULT_SEGMENT_SIZE,
         commit_window: float = DEFAULT_COMMIT_WINDOW,
+        watch_buffer: int = DEFAULT_WATCH_BUFFER,
+        anchor_key: bytes | str | None = None,
     ) -> None:
         if not 0.002 <= float(commit_window) <= 0.010:
             raise ValueError("commit_window must be in [0.002, 0.010] seconds")
         if int(segment_size) <= 0:
             raise ValueError("segment_size must be positive")
+        if int(watch_buffer) <= 0:
+            raise ValueError("watch_buffer must be positive")
         self.path = Path(path)
         self.segment_size = int(segment_size)
         self.commit_window = float(commit_window)
+        self.watch_buffer = int(watch_buffer)
         self.path.mkdir(parents=True, exist_ok=True)
-        for name in (LOG_DIR, SNAP_DIR, STATE_DIR, VIEWS_DIR):
+        for name in (LOG_DIR, SNAP_DIR, ANCHOR_DIR, STATE_DIR, VIEWS_DIR):
             (self.path / name).mkdir(parents=True, exist_ok=True)
+        self._anchor_key = self._init_anchor_key(anchor_key)
 
         self._lock_fd = os.open(
             str(self.path / LOCK_NAME), os.O_CREAT | os.O_RDWR, 0o600
@@ -317,16 +526,23 @@ class Store:
             self._lock_fd = -1
             raise StoreBusy(f"another writer holds {self.path / LOCK_NAME}") from exc
 
-        scan = scan_store(self.path, repair=True)
+        scan = scan_store(self.path, repair=True, anchor_key=self._anchor_key)
         if not scan.report.ok:
             os.close(self._lock_fd)
             self._lock_fd = -1
             raise StoreCorrupt("; ".join(scan.report.errors))
         self._state = scan.state
         self._txns = scan.txns
+        self._events = scan.events
         self._request_cache = scan.request_cache
         self._rev = scan.report.rev
         self._last_hash = scan.report.last_hash
+        self._committed_offset = scan.report.committed_offset
+        self._segment_name = scan.report.segment
+        self._anchor = scan.anchor
+        self._last_anchor_rev = int(scan.anchor["rev"]) if scan.anchor else 0
+        self._read_only = False
+        self._fail_reason: str | None = None
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
         self._pending: deque[_Request] = deque()
@@ -334,6 +550,7 @@ class Store:
         self._closed = False
         self._busy = threading.Event()
         self._busy.set()
+        self._subscribers: set[_Subscriber] = set()
         self._stats = {"commits": 0, "ops": 0, "max_batch": 0, "fsyncs": 0}
         self._write_meta()
         self._materialize_all()
@@ -345,10 +562,28 @@ class Store:
         )
         self._writer.start()
 
+    def _init_anchor_key(self, supplied: bytes | str | None) -> bytes:
+        if supplied is not None:
+            return supplied.encode("utf-8") if isinstance(supplied, str) else supplied
+        existing = _anchor_key_from_store(self.path)
+        if existing:
+            return existing
+        key = secrets.token_bytes(32)
+        _write_atomic(self.path / ANCHOR_KEY, key)
+        try:
+            os.chmod(self.path / ANCHOR_KEY, 0o600)
+        except OSError:
+            pass
+        return key
+
     # -- lifecycle -------------------------------------------------------
     def _check_open(self) -> None:
         if self._closed:
             raise StoreError("store is closed")
+
+    @property
+    def read_only(self) -> bool:
+        return self._read_only
 
     def close(self) -> None:
         if self._closed:
@@ -373,10 +608,10 @@ class Store:
         with self._lock:
             return dict(self._stats)
 
-    # -- reads -----------------------------------------------------------
+    # -- reads / API -----------------------------------------------------
     def get(self, key: str) -> dict[str, Any] | None:
         self._check_open()
-        _safe_key(key)
+        key = _safe_key(key)
         with self._lock:
             value = self._state.get(key)
             return copy.deepcopy(value) if value is not None else None
@@ -385,15 +620,15 @@ class Store:
         self,
         prefix: str = "",
         label_selector: dict[str, str] | None = None,
-    ) -> list[dict[str, Any]]:
+        limit: int | None = None,
+        continue_token: str | None = None,
+    ):
         self._check_open()
         if prefix and "\x00" in prefix:
-            raise StoreError("invalid prefix")
+            raise InvalidRequest("invalid prefix")
         with self._lock:
-            keys = sorted(
-                key for key in self._state if key.startswith(prefix)
-            )
-            values = [copy.deepcopy(self._state[key]) for key in keys]
+            keys = sorted(k for k in self._state if k.startswith(prefix))
+            values = [copy.deepcopy(self._state[k]) for k in keys]
         if label_selector:
             filtered = []
             for value in values:
@@ -402,35 +637,102 @@ class Store:
                     labels.get(k) == v for k, v in label_selector.items()
                 ):
                     filtered.append(value)
-            return filtered
-        return values
+            values = filtered
+        if limit is None and continue_token is None:
+            return values
+        start = 0
+        if continue_token:
+            try:
+                start = int(continue_token)
+            except ValueError as exc:
+                raise InvalidRequest("invalid continue token") from exc
+        if limit is None or limit <= 0:
+            raise InvalidRequest("limit must be positive")
+        page = values[start : start + limit]
+        next_token = (
+            str(start + limit) if start + limit < len(values) else None
+        )
+        return page, next_token
 
     def watch(
         self, from_rev: int = 0, timeout: float | None = None
     ) -> Iterator[dict[str, Any]]:
         self._check_open()
         if not isinstance(from_rev, int) or from_rev < 0:
-            raise StoreError("from_rev must be a non-negative int")
-        cursor = from_rev + 1
-        deadline = None if timeout is None else time.monotonic() + timeout
-        while True:
-            self._check_open()
-            with self._lock:
-                pending = [
-                    copy.deepcopy(txn)
-                    for txn in self._txns
-                    if int(txn["rev"]) >= cursor
-                ]
-            for txn in pending:
-                yield txn
-                cursor = int(txn["rev"]) + 1
-            if deadline is not None and time.monotonic() >= deadline:
-                return
-            time.sleep(0.005)
+            raise InvalidRequest("from_rev must be a non-negative int")
+        subscriber = self._subscribe(from_rev)
+
+        def iterator() -> Iterator[dict[str, Any]]:
+            deadline = None if timeout is None else time.monotonic() + timeout
+            try:
+                while True:
+                    with subscriber.condition:
+                        while (
+                            not subscriber.queue
+                            and not subscriber.gone
+                            and not self._closed
+                        ):
+                            remaining = (
+                                None
+                                if deadline is None
+                                else deadline - time.monotonic()
+                            )
+                            if remaining is not None and remaining <= 0:
+                                return
+                            subscriber.condition.wait(
+                                timeout=remaining if remaining is not None else 0.05
+                            )
+                        if subscriber.gone:
+                            raise WatchGone(
+                                "watch buffer exceeded; relist required",
+                                subscriber.last_rev,
+                            )
+                        if self._closed:
+                            return
+                        event = subscriber.queue.popleft()
+                        subscriber.last_rev = int(event["rev"])
+                    yield event
+            finally:
+                self._unsubscribe(subscriber)
+
+        return iterator()
+
+    def _subscribe(self, from_rev: int) -> "_Subscriber":
+        subscriber = _Subscriber(from_rev)
+        with self._lock:
+            self._subscribers.add(subscriber)
+            backlog = [
+                event for event in self._events if int(event["rev"]) > from_rev
+            ]
+            for event in backlog:
+                if not self._enqueue(subscriber, event):
+                    break
+        return subscriber
+
+    def _unsubscribe(self, subscriber: "_Subscriber") -> None:
+        with self._lock:
+            self._subscribers.discard(subscriber)
+
+    def _enqueue(self, subscriber: "_Subscriber", event: dict[str, Any]) -> bool:
+        key = (int(event["rev"]), int(event.get("seq", 0)))
+        with subscriber.condition:
+            if key in subscriber.seen:
+                return True
+            subscriber.seen.add(key)
+            if len(subscriber.queue) >= self.watch_buffer:
+                subscriber.gone = True
+                subscriber.queue.clear()
+                subscriber.condition.notify_all()
+                return False
+            subscriber.queue.append(copy.deepcopy(event))
+            subscriber.condition.notify_all()
+            return True
 
     # -- writes ----------------------------------------------------------
     def _submit(self, request: "_Request") -> Any:
         self._check_open()
+        if self._read_only:
+            raise StoreReadOnly(self._fail_reason or "store is read-only until fsck")
         with self._cond:
             self._pending.append(request)
             self._cond.notify()
@@ -443,40 +745,58 @@ class Store:
         self,
         key: str,
         value: dict[str, Any],
-        expected_rev: int | None = None,
+        expected_rev: int | str | None = None,
         request_id: str | None = None,
+        dry_run: bool = False,
         actor: str = "",
+        *,
+        expected_rv: int | str | None = None,
     ) -> dict[str, Any]:
-        _safe_key(key)
+        if expected_rv is not None:
+            if expected_rev is not None:
+                raise InvalidRequest("use expected_rev or expected_rv, not both")
+            expected_rev = expected_rv
+        key = _safe_key(key)
         if not isinstance(value, dict):
-            raise StoreError("value must be an object")
+            raise InvalidRequest("value must be an object")
+        normalized = _normalize(value)
+        if len(_jcs(normalized)) > MAX_VALUE_BYTES:
+            raise PayloadTooLarge("value exceeds 1 MiB")
         return self._submit(
             _Request(
                 kind="put",
                 key=key,
-                value=copy.deepcopy(value),
+                value=normalized,
                 expected_rev=expected_rev,
-                request_id=request_id,
-                actor=actor,
+                request_id=_nfc(request_id) if request_id else None,
+                dry_run=dry_run,
+                actor=_nfc(actor),
             )
         )
 
     def delete(
         self,
         key: str,
-        expected_rev: int | None = None,
+        expected_rev: int | str | None = None,
         request_id: str | None = None,
         actor: str = "",
+        *,
+        expected_rv: int | str | None = None,
     ) -> None:
-        _safe_key(key)
+        if expected_rv is not None:
+            if expected_rev is not None:
+                raise InvalidRequest("use expected_rev or expected_rv, not both")
+            expected_rev = expected_rv
+        key = _safe_key(key)
         self._submit(
             _Request(
                 kind="delete",
                 key=key,
                 value=None,
                 expected_rev=expected_rev,
-                request_id=request_id,
-                actor=actor,
+                request_id=_nfc(request_id) if request_id else None,
+                dry_run=False,
+                actor=_nfc(actor),
             )
         )
         return None
@@ -520,92 +840,130 @@ class Store:
                 request.event.set()
 
     def _commit_batch_inner(self, batch: list[_Request]) -> None:
-        state = dict(self._state)
-        rev = self._rev
-        last_hash = self._last_hash
-        lines: list[bytes] = []
-        new_txns: list[dict[str, Any]] = []
-        changed: set[str] = set()
-        cache = dict(self._request_cache)
-        accepted: list[_Request] = []
-
-        for request in batch:
-            if request.request_id and request.request_id in cache:
-                request.result = copy.deepcopy(cache[request.request_id])
-                continue
-            current = state.get(request.key)
-            current_rev = int(current.get("resourceVersion", 0)) if current else 0
-            if (
-                request.expected_rev is not None
-                and request.expected_rev != current_rev
-            ):
-                request.error = ConflictError(
-                    f"expected rev {request.expected_rev}, current {current_rev}"
-                )
-                continue
-            rev += 1
-            if request.kind == "delete":
-                if current is None:
-                    request.result = None
+        # CAS is evaluated while building the batch, under the writer lock.
+        with self._lock:
+            if self._read_only:
+                for request in batch:
+                    request.error = StoreReadOnly(
+                        self._fail_reason or "store is read-only until fsck"
+                    )
+                return
+            state = dict(self._state)
+            rev = self._rev
+            last_hash = self._last_hash
+            lines: list[bytes] = []
+            new_txns: list[dict[str, Any]] = []
+            new_events: list[dict[str, Any]] = []
+            changed: set[str] = set()
+            cache = dict(self._request_cache)
+            accepted: list[_Request] = []
+            for request in batch:
+                if request.request_id and request.request_id in cache:
+                    request.result = copy.deepcopy(cache[request.request_id])
                     continue
-                txn = [{"op": "del", "key": request.key}]
-                state.pop(request.key, None)
-                request.result = None
-            else:
-                stored = copy.deepcopy(request.value or {})
-                uid = (
-                    str(current.get("uid"))
-                    if current and current.get("uid")
-                    else str(stored.get("uid") or uuid.uuid4().hex)
+                current = state.get(request.key)
+                current_rv = (
+                    str(current.get("resourceVersion", "")) if current else ""
                 )
-                stored["uid"] = uid
-                stored["resourceVersion"] = rev
-                txn = [{"op": "put", "key": request.key, "value": stored}]
-                state[request.key] = stored
-                request.result = stored
-            if request.request_id:
-                cache[request.request_id] = copy.deepcopy(request.result)
-            record = {
-                "rev": rev,
-                "prev": last_hash,
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "actor": request.actor,
-                "requestId": request.request_id or "",
-                "txn": txn,
-                "hash": _txn_hash(rev, last_hash, txn),
-            }
-            lines.append(_canonical(record) + b"\n")
-            new_txns.append(record)
-            last_hash = record["hash"]
-            changed.add(request.key)
-            accepted.append(request)
+                if not _rv_matches(request.expected_rev, current_rv, current):
+                    request.error = ConflictError(
+                        f"expected resourceVersion {request.expected_rev}, "
+                        f"current {current_rv or '<missing>'}"
+                    )
+                    continue
+                next_rev = rev + 1
+                if request.dry_run:
+                    preview = copy.deepcopy(request.value or {})
+                    preview["resourceVersion"] = f"{next_rev}-preview"
+                    request.result = preview
+                    continue
+                stored = request.result
+                if request.kind == "delete":
+                    if current is None:
+                        request.result = None
+                        continue
+                    txn = [{"op": "del", "key": request.key}]
+                    event = {
+                        "rev": next_rev,
+                        "seq": 0,
+                        "type": "DELETED",
+                        "key": request.key,
+                        "resourceVersion": current_rv,
+                        "value": None,
+                    }
+                    stored = None
+                else:
+                    stored = copy.deepcopy(request.value or {})
+                    uid = (
+                        str(current.get("uid"))
+                        if current and current.get("uid")
+                        else str(stored.get("uid") or uuid.uuid4().hex)
+                    )
+                    generation = int((current or {}).get("generation", 1))
+                    if current and current.get("spec") != stored.get("spec"):
+                        generation += 1
+                    stored["uid"] = uid
+                    stored["generation"] = generation
+                    stored["resourceVersion"] = f"{next_rev}-{uid[:8]}"
+                    txn = [{"op": "put", "key": request.key, "value": stored}]
+                    event = {
+                        "rev": next_rev,
+                        "seq": 0,
+                        "type": "MODIFIED" if current else "ADDED",
+                        "key": request.key,
+                        "resourceVersion": stored["resourceVersion"],
+                        "value": copy.deepcopy(stored),
+                    }
+                record = {
+                    "fmt": FORMAT,
+                    "rev": next_rev,
+                    "prev": last_hash,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "actor": request.actor,
+                    "requestId": request.request_id or "",
+                    "txn": txn,
+                }
+                record["hash"] = _record_hash(record)
+                line = _jcs(record) + b"\n"
+                if len(line) > MAX_LINE_BYTES:
+                    request.error = PayloadTooLarge("journal line exceeds 2 MiB")
+                    continue
+                if request.kind == "delete":
+                    state.pop(request.key, None)
+                    request.result = None
+                else:
+                    state[request.key] = stored
+                    request.result = stored
+                if request.request_id:
+                    cache[request.request_id] = copy.deepcopy(request.result)
+                lines.append(line)
+                new_txns.append(record)
+                new_events.append(event)
+                changed.add(request.key)
+                accepted.append(request)
+                rev = next_rev
+                last_hash = record["hash"]
 
         if not lines:
             return
         segment = self._current_segment()
-        if segment.exists() and segment.stat().st_size > 0 and (
-            segment.stat().st_size + sum(len(line) for line in lines)
+        if (
+            segment.exists()
+            and segment.stat().st_size > 0
+            and segment.stat().st_size + sum(len(line) for line in lines)
             > self.segment_size
         ):
             segment = self._next_segment()
         original_size = segment.stat().st_size if segment.exists() else 0
+        batch_start = original_size
+        total_bytes = sum(len(line) for line in lines)
         try:
-            with segment.open("ab") as handle:
-                for line in lines:
-                    handle.write(line)
-                handle.flush()
-                self._fsync_fd(handle.fileno())
+            self._append_lines(segment, lines)
         except OSError as exc:
-            try:
-                with segment.open("r+b") as handle:
-                    handle.truncate(original_size)
-                    handle.flush()
-                    self._fsync_fd(handle.fileno())
-            except OSError:
-                pass
+            self._fail_stop(segment, batch_start, exc)
             for request in accepted:
                 request.error = DurabilityError(
-                    f"fsync failed for rev {rev}: {exc}"
+                    f"write/fsync failed: {exc}"
                 )
             return
 
@@ -614,22 +972,50 @@ class Store:
             self._rev = rev
             self._last_hash = last_hash
             self._txns.extend(new_txns)
+            self._events.extend(new_events)
             self._request_cache = cache
-        self._stats["fsyncs"] += 1
-        self._write_meta()
-        self._materialize(changed, state)
+            self._committed_offset = batch_start + total_bytes
+            self._segment_name = segment.name
+            self._stats["fsyncs"] += 1
+            self._maybe_anchor(rev, last_hash)
+            self._write_meta()
+            for subscriber in list(self._subscribers):
+                for event in new_events:
+                    if not self._enqueue(subscriber, event):
+                        break
+            self._materialize(changed, state)
         try:
             self._after_fsync()
         except BaseException as exc:
             for request in accepted:
                 if request.error is None and request.result is not None:
-                    request.error = exc if isinstance(exc, Exception) else StoreError(str(exc))
+                    request.error = (
+                        exc if isinstance(exc, Exception) else StoreError(str(exc))
+                    )
             return
         for request in accepted:
             request.result = copy.deepcopy(request.result)
 
+    def _fail_stop(self, segment: Path, batch_start: int, exc: OSError) -> None:
+        try:
+            with segment.open("r+b") as handle:
+                handle.truncate(batch_start)
+                handle.flush()
+                self._fsync_fd(handle.fileno())
+        except OSError:
+            pass
+        self._read_only = True
+        self._fail_reason = f"fail-stop after {exc}; run nqctl store fsck --repair"
+
+    def _append_lines(self, segment: Path, lines: list[bytes]) -> None:
+        with segment.open("ab") as handle:
+            for line in lines:
+                handle.write(line)
+            handle.flush()
+            self._fsync_fd(handle.fileno())
+
     def _after_fsync(self) -> None:
-        """Test seam: a crash here happens after durability, before response."""
+        """Test seam: crash after durability, before client response."""
 
     # -- disk helpers ----------------------------------------------------
     def _current_segment(self) -> Path:
@@ -649,18 +1035,53 @@ class Store:
     def _fsync_fd(self, fd: int) -> None:
         os.fsync(fd)
 
-    def _write_meta(self) -> None:
+    def _maybe_anchor(self, rev: int, last_hash: str) -> None:
+        if rev < ANCHOR_INTERVAL:
+            return
+        if rev // ANCHOR_INTERVAL <= self._last_anchor_rev // ANCHOR_INTERVAL:
+            return
+        try:
+            self.anchor()
+        except OSError as exc:
+            self._read_only = True
+            self._fail_reason = f"anchor write failed: {exc}"
+
+    def anchor(self) -> int:
+        self._check_open()
+        with self._lock:
+            rev = self._rev
+            last_hash = self._last_hash
+        body = {"fmt": FORMAT, "rev": rev, "hash": last_hash}
+        signature = "hmac-sha256:" + hmac.new(
+            self._anchor_key, _jcs(body), hashlib.sha256
+        ).hexdigest()
+        payload = {**body, "sig": signature}
         _write_atomic(
-            self.path / META_NAME,
-            _canonical(
-                {
-                    "rev": self._rev,
-                    "last_hash": self._last_hash,
-                    "format": FORMAT,
-                }
-            )
-            + b"\n",
+            self.path / ANCHOR_DIR / f"{rev:010d}.anchor",
+            _jcs(payload) + b"\n",
         )
+        with self._lock:
+            self._last_anchor_rev = rev
+            self._anchor = payload
+        self._write_meta()
+        return rev
+
+    def _write_meta(self) -> None:
+        with self._lock:
+            anchor = (
+                {"rev": int(self._anchor["rev"]), "hash": str(self._anchor["hash"])}
+                if self._anchor
+                else None
+            )
+            payload = {
+                "fmt": FORMAT,
+                "rev": self._rev,
+                "last_hash": self._last_hash,
+                "committedOffset": self._committed_offset,
+                "segment": self._segment_name,
+                "anchor": anchor,
+            }
+        _write_atomic(self.path / META_NAME, _jcs(payload) + b"\n")
 
     def _materialize(
         self, changed: Iterable[str], state: dict[str, dict[str, Any]]
@@ -668,26 +1089,23 @@ class Store:
         for key in changed:
             path = _state_path(self.path, key)
             if key in state:
-                _write_atomic(path, _canonical(state[key]) + b"\n")
+                _write_atomic(path, _jcs(state[key]) + b"\n")
             elif path.exists():
                 path.unlink()
 
     def _materialize_all(self) -> None:
         for key, value in self._state.items():
-            _write_atomic(
-                _state_path(self.path, key), _canonical(value) + b"\n"
-            )
+            _write_atomic(_state_path(self.path, key), _jcs(value) + b"\n")
 
     def _write_views(self) -> None:
         views = self.path / VIEWS_DIR
-        index_lines = ["# Nemeq state", "", "| key | rev |", "|---|---:|"]
+        index_lines = ["# Nemeq state", "", "| key | resourceVersion |", "|---|---|"]
         for key in sorted(self._state):
             index_lines.append(
-                f"| {key} | {int(self._state[key].get('resourceVersion', 0))} |"
+                f"| {key} | {self._state[key].get('resourceVersion', '')} |"
             )
         _write_atomic(
-            views / "index.md",
-            ("\n".join(index_lines) + "\n").encode("utf-8"),
+            views / "index.md", ("\n".join(index_lines) + "\n").encode("utf-8")
         )
         audit_path = views / "audit.csv"
         audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -725,15 +1143,9 @@ class Store:
             rev = self._rev
             last_hash = self._last_hash
             state = copy.deepcopy(self._state)
-        payload = {
-            "rev": rev,
-            "hash": last_hash,
-            "state": state,
-            "ts": time.time(),
-        }
+        payload = {"fmt": FORMAT, "rev": rev, "hash": last_hash, "state": state}
         _write_atomic(
-            self.path / SNAP_DIR / f"{rev:010d}.json",
-            _canonical(payload) + b"\n",
+            self.path / SNAP_DIR / f"{rev:010d}.json", _jcs(payload) + b"\n"
         )
         snapshots = sorted((self.path / SNAP_DIR).glob("*.json"))
         for old in snapshots[:-2]:
@@ -742,7 +1154,16 @@ class Store:
         return rev
 
     def fsck(self, repair: bool = False) -> FsckReport:
-        return scan_store(self.path, repair=repair).report
+        report = scan_store(
+            self.path, repair=repair, anchor_key=self._anchor_key
+        ).report
+        if report.ok and self._read_only:
+            self._read_only = False
+            self._fail_reason = None
+            self._committed_offset = report.committed_offset
+            self._segment_name = report.segment
+            self._write_meta()
+        return report
 
     def verify(self) -> bool:
         report = self.fsck(repair=False)
@@ -756,12 +1177,37 @@ class _Request:
     kind: str
     key: str
     value: dict[str, Any] | None
-    expected_rev: int | None
+    expected_rev: int | str | None
     request_id: str | None
+    dry_run: bool
     actor: str
     event: threading.Event = field(default_factory=threading.Event)
     result: Any = None
     error: BaseException | None = None
+
+
+class _Subscriber:
+    def __init__(self, from_rev: int) -> None:
+        self.from_rev = from_rev
+        self.last_rev = from_rev
+        self.queue: deque[dict[str, Any]] = deque()
+        self.seen: set[tuple[int, int]] = set()
+        self.gone = False
+        self.condition = threading.Condition()
+
+
+def _rv_matches(
+    expected: int | str | None,
+    current_rv: str,
+    current: dict[str, Any] | None,
+) -> bool:
+    if expected is None:
+        return True
+    if current is None:
+        return expected in (0, "0", "")
+    if isinstance(expected, int):
+        return current_rv.split("-", 1)[0] == str(expected)
+    return current_rv == expected
 
 
 # ---------------------------------------------------------------------------

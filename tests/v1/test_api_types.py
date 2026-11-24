@@ -9,6 +9,9 @@ from massaru.api_types import (
     Grant,
     GrantSpec,
     GrantStatus,
+    Lease,
+    LeaseSpec,
+    LeaseStatus,
     Model,
     ModelSpec,
     ModelStatus,
@@ -107,6 +110,12 @@ def test_all_resource_roundtrips() -> None:
                 provider="local", model_id="opus", context=1000
             ),
             status=ModelStatus(healthy=True, version="1"),
+            resource_version=3,
+        ),
+        Lease(
+            name="l1",
+            spec=LeaseSpec(holder="session-1", duration_seconds=15),
+            status=LeaseStatus(holder="session-1", lease_duration_seconds=15),
             resource_version=3,
         ),
     ]
