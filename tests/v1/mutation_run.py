@@ -95,44 +95,42 @@ MUTANTS: list[dict[str, str]] = [
     },
     {
         "id": "M8",
-        "name": "journal_skips_fsync",
-        "file": "massaru/journal.py",
-        "test": "test_fsync_failure_is_not_acknowledged",
-        "old": """                    with segment.open("ab") as handle:
-                        handle.write(line)
-                        handle.flush()
-                        os.fsync(handle.fileno())""",
-        "new": """                    with segment.open("ab") as handle:
-                        handle.write(line)
-                        handle.flush()""",
+        "name": "store_skips_cas",
+        "file": "massaru/store.py",
+        "test": "test_cas_conflict_on_put_and_delete",
+        "old": """            request.expected_rev is not None""",
+        "new": """            False and request.expected_rev is not None""",
     },
     {
         "id": "M9",
-        "name": "journal_skips_hash_verification",
-        "file": "massaru/journal.py",
-        "test": "test_bit_flip_raises_corrupt",
-        "old": """        if record.hash != expected:""",
-        "new": """        if False:""",
+        "name": "store_skips_chain_verification",
+        "file": "massaru/store.py",
+        "test": "test_corrupt_hash_chain_raises_on_open",
+        "old": """                if change.get("prevHash") != expected_hash:
+                    raise StoreCorrupt(
+                        f"change {change_rev} breaks hash-chain"
+                    )""",
+        "new": """                if False:
+                    raise StoreCorrupt(
+                        f"change {change_rev} breaks hash-chain"
+                    )""",
     },
     {
         "id": "M10",
-        "name": "journal_append_does_not_repair_torn_tail",
-        "file": "massaru/journal.py",
-        "test": "test_torn_tail_is_repaired_only_in_last_segment",
-        "old": """                records = self.read_all(repair=True)
-                last = records[-1] if records else None
-                last_rev = last.rev if last else 0""",
-        "new": """                records = self.read_all()
-                last = records[-1] if records else None
-                last_rev = last.rev if last else 0""",
+        "name": "store_skips_verify_on_open",
+        "file": "massaru/store.py",
+        "test": "test_corrupt_hash_chain_raises_on_open",
+        "old": """            self._ensure_meta()
+            self.verify()""",
+        "new": """            self._ensure_meta()""",
     },
     {
         "id": "M11",
-        "name": "journal_ignores_cas_precondition",
-        "file": "massaru/journal.py",
-        "test": "test_cas_prev_rev_conflict",
-        "old": """                if expected_rev is not None and expected_rev != last_rev:""",
-        "new": """                if False:""",
+        "name": "store_uses_sync_false",
+        "file": "massaru/store.py",
+        "test": "test_no_sync_false_and_public_interface",
+        "old": """                sync=True,""",
+        "new": """                sync=False,""",
     },
 ]
 

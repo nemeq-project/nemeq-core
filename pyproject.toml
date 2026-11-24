@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 authors = [{ name = "Nemeq Project" }]
+dependencies = ["lmdb>=1.4"]
 keywords = ["nemeq", "libbu", "kernel", "agents", "deterministic"]
 classifiers = [
   "Programming Language :: Python :: 3",
