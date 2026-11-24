@@ -175,12 +175,10 @@ class TestInspect:
 
 
 STUB_CASES = [
-    ("install", ("zi", "su")),
     ("run", ("epishu-1",)),
     ("sleep", ("epishu-1",)),
     ("stop", ("epishu-1",)),
     ("commit", ("epishu-1",)),
-    ("bind_model", ("epishu-1", "model-1")),
 ]
 
 

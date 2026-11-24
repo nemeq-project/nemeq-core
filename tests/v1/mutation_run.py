@@ -66,6 +66,37 @@ MUTANTS: list[dict[str, str]] = [
     "atoms",""",
         "new": """    "atoms",""",
     },
+    {
+        "id": "M5",
+        "name": "install_skips_digest_verification",
+        "file": "massaru/instance.py",
+        "test": "test_bad_digest",
+        "old": """    zi_manifest, zi_digest = verify_image(zi_ref, "zi")
+    su_manifest, su_digest = verify_image(su_ref, "su")""",
+        "new": """    from .images import read_manifest
+    zi_manifest = read_manifest(zi_ref, "zi")
+    zi_digest = zi_manifest["digest"]
+    su_manifest = read_manifest(su_ref, "su")
+    su_digest = su_manifest["digest"]""",
+    },
+    {
+        "id": "M6",
+        "name": "bind_model_skips_digest_verification",
+        "file": "massaru/instance.py",
+        "test": "test_verify_detects_tamper",
+        "old": """    instance = verify_instance(state_root, epishu_id)
+    instance["model"] = model""",
+        "new": """    instance = read_instance(state_root, epishu_id)
+    instance["model"] = model""",
+    },
+    {
+        "id": "M7",
+        "name": "image_digest_ignores_content",
+        "file": "massaru/images.py",
+        "test": "test_known_vector",
+        "old": """    return DIGEST_PREFIX + digest.hexdigest()""",
+        "new": """    return DIGEST_PREFIX + ("0" * 64)""",
+    },
 ]
 
 
@@ -78,7 +109,7 @@ def _run_pytest(
         PYTHON,
         "-m",
         "pytest",
-        "tests/v1/test_massaru_skeleton.py",
+        "tests/v1",
         "-q",
         "-p",
         "no:cacheprovider",
@@ -105,7 +136,7 @@ def _apply(path: Path, old: str, new: str) -> None:
 
 
 def main() -> int:
-    print("baseline: unmutated v1 skeleton suite")
+    print("baseline: unmutated v1 suite")
     baseline = _run_pytest(ROOT)
     if baseline.returncode != 0:
         print(baseline.stdout)
@@ -146,7 +177,7 @@ def main() -> int:
 
         caught = completed.returncode != 0
         match = re.search(
-            r"FAILED\s+\S*test_massaru_skeleton\.py::(\S+)",
+            r"FAILED\s+\S*test_[^:]*\.py::(\S+)",
             completed.stdout,
         )
         witness = match.group(1) if match else (

@@ -3,10 +3,15 @@
 Read-only commands:
     python -m massaru [--state-root DIR] list
     python -m massaru [--state-root DIR] inspect <epishu-id>
+    python -m massaru [--state-root DIR] verify <epishu-id>
 
-Lifecycle commands are explicit skeletons and exit 20 without touching the
-filesystem.  This keeps the v1 read-only promise enforceable while the
-massaru lifecycle lands in later PRs.
+Install/bind:
+    python -m massaru [--state-root DIR] install <zi> <su> [--epishu-id ID]
+    python -m massaru [--state-root DIR] bind_model <epishu-id> <model>
+
+Lifecycle commands (run/sleep/stop/commit) are explicit skeletons and exit
+20 without touching the filesystem.  v1 stays read-only: no external side
+effects are possible from this package.
 """
 
 from __future__ import annotations
@@ -17,17 +22,19 @@ import sys
 from typing import Any
 
 from . import NOT_IMPLEMENTED_EXIT, SCHEMA, VERSION
+from .images import DigestMismatch, ImageError
+from .instance import (
+    InstanceError,
+    InstanceExists,
+    InstanceMissing,
+    bind_model,
+    install_instance,
+    verify_instance,
+)
 from .layout import resolve_state_root
 from .store import inspect_instance, list_instances
 
-LIFECYCLE_COMMANDS = (
-    "install",
-    "run",
-    "sleep",
-    "stop",
-    "commit",
-    "bind_model",
-)
+LIFECYCLE_COMMANDS = ("run", "sleep", "stop", "commit")
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -67,10 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser = subparsers.add_parser(
         "install",
         parents=[common],
-        help="install zi+su (skeleton: not implemented)",
+        help="install zi+su (digest + 02b layout)",
     )
     install_parser.add_argument("zi")
     install_parser.add_argument("su")
+    install_parser.add_argument("--epishu-id", default=None)
 
     for name in ("run", "sleep", "stop", "commit"):
         command_parser = subparsers.add_parser(
@@ -83,10 +91,15 @@ def build_parser() -> argparse.ArgumentParser:
     bind_parser = subparsers.add_parser(
         "bind_model",
         parents=[common],
-        help="bind a model to an epishu (skeleton: not implemented)",
+        help="bind a model to an installed epishu",
     )
     bind_parser.add_argument("epishu_id")
     bind_parser.add_argument("model")
+
+    verify_parser = subparsers.add_parser(
+        "verify", parents=[common], help="verify zi/su digests (read-only)"
+    )
+    verify_parser.add_argument("epishu_id")
 
     return parser
 
@@ -129,6 +142,140 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         emit({"schema": SCHEMA, **payload})
+        return 0
+
+    if args.command == "install":
+        try:
+            instance = install_instance(
+                state_root,
+                args.zi,
+                args.su,
+                epishu_id=args.epishu_id,
+            )
+        except DigestMismatch as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "install",
+                    "status": "error",
+                    "code": "digest_mismatch",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        except (ImageError, InstanceExists, ValueError, OSError) as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "install",
+                    "status": "error",
+                    "code": "install_failed",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        emit(
+            {
+                "schema": SCHEMA,
+                "command": "install",
+                "status": "installed",
+                "epishu_id": instance["epishu_id"],
+                "instance": instance,
+            }
+        )
+        return 0
+
+    if args.command == "bind_model":
+        try:
+            instance = bind_model(state_root, args.epishu_id, args.model)
+        except InstanceMissing as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "bind_model",
+                    "status": "not_found",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        except DigestMismatch as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "bind_model",
+                    "status": "error",
+                    "code": "digest_mismatch",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        except (ImageError, InstanceError, OSError) as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "bind_model",
+                    "status": "error",
+                    "code": "bind_failed",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        emit(
+            {
+                "schema": SCHEMA,
+                "command": "bind_model",
+                "status": "bound",
+                "epishu_id": instance["epishu_id"],
+                "model": instance.get("model"),
+            }
+        )
+        return 0
+
+    if args.command == "verify":
+        try:
+            instance = verify_instance(state_root, args.epishu_id)
+        except InstanceMissing as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "verify",
+                    "status": "not_found",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        except DigestMismatch as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "verify",
+                    "status": "error",
+                    "code": "digest_mismatch",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        except (ImageError, InstanceError, OSError) as exc:
+            emit(
+                {
+                    "schema": SCHEMA,
+                    "command": "verify",
+                    "status": "error",
+                    "code": "verify_failed",
+                    "error": str(exc),
+                }
+            )
+            return 1
+        emit(
+            {
+                "schema": SCHEMA,
+                "command": "verify",
+                "status": "ok",
+                "epishu_id": instance["epishu_id"],
+                "zi_digest": instance.get("zi_digest"),
+                "su_digest": instance.get("su_digest"),
+            }
+        )
         return 0
 
     if args.command in LIFECYCLE_COMMANDS:
