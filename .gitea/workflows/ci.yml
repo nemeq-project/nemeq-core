@@ -38,5 +38,5 @@ jobs:
       - name: Agents mutants (5/5)
         run: python agents/tests/mutation_run.py
 
-      - name: V1 skeleton mutants (4/4)
+      - name: V1 skeleton mutants (7/7)
         run: python tests/v1/mutation_run.py

@@ -66,6 +66,33 @@ MUTANTS: list[dict[str, str]] = [
     "atoms",""",
         "new": """    "atoms",""",
     },
+    {
+        "id": "M5",
+        "name": "reconcile_ignores_digest_mismatch",
+        "file": "massaru/reconcile.py",
+        "test": "test_digest_mismatch_rejects_without_layout",
+        "old": """            observation.actual_digest is None
+            or observation.actual_digest != observation.expected_digest""",
+        "new": """            observation.actual_digest is None
+            or False""",
+    },
+    {
+        "id": "M6",
+        "name": "bind_model_mutates_input_spec",
+        "file": "massaru/reconcile.py",
+        "test": "test_bind_model_is_pure_spec_update",
+        "old": """    return replace(spec, model=model)""",
+        "new": """    spec.model = model
+    return spec""",
+    },
+    {
+        "id": "M7",
+        "name": "reconcile_allows_writable_epishu",
+        "file": "massaru/reconcile.py",
+        "test": "test_read_only_and_kind_guards",
+        "old": """    if spec.read_only is not True:""",
+        "new": """    if False:""",
+    },
 ]
 
 
@@ -78,7 +105,7 @@ def _run_pytest(
         PYTHON,
         "-m",
         "pytest",
-        "tests/v1/test_massaru_skeleton.py",
+        "tests/v1",
         "-q",
         "-p",
         "no:cacheprovider",
@@ -105,7 +132,7 @@ def _apply(path: Path, old: str, new: str) -> None:
 
 
 def main() -> int:
-    print("baseline: unmutated v1 skeleton suite")
+    print("baseline: unmutated v1 suite")
     baseline = _run_pytest(ROOT)
     if baseline.returncode != 0:
         print(baseline.stdout)
@@ -146,7 +173,7 @@ def main() -> int:
 
         caught = completed.returncode != 0
         match = re.search(
-            r"FAILED\s+\S*test_massaru_skeleton\.py::(\S+)",
+            r"FAILED\s+\S*test_[^:]*\.py::(\S+)",
             completed.stdout,
         )
         witness = match.group(1) if match else (
