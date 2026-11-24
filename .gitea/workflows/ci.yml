@@ -1,0 +1,42 @@
+name: ci
+
+"on":
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-cov
+
+      - name: Lint (stdlib-only, no shell=True)
+        run: python tools/lint.py
+
+      - name: Tests and coverage
+        run: |
+          python -m pytest \
+            --cov=kernel.libbu \
+            --cov=agents \
+            --cov=massaru \
+            --cov-fail-under=70 \
+            -q
+
+      - name: Kernel mutants (32/32)
+        run: python kernel/mutation_run.py
+
+      - name: Agents mutants (5/5)
+        run: python agents/tests/mutation_run.py
+
+      - name: V1 skeleton mutants (4/4)
+        run: python tests/v1/mutation_run.py
