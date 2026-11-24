@@ -16,10 +16,15 @@ from massaru.store import (
     GENESIS_HASH,
     ConflictError,
     DurabilityError,
+    PayloadTooLarge,
     Store,
     StoreBusy,
     StoreCorrupt,
-    _txn_hash,
+    StoreReadOnly,
+    WatchGone,
+    _jcs,
+    _normalize,
+    _record_hash,
     scan_store,
 )
 
@@ -40,12 +45,14 @@ def test_put_get_list_delete_and_materialization(tmp_path: Path):
         put(store, "epishu/e2", 2, expected_rev=0)
         put(store, "su/s1", 3, expected_rev=0)
 
-        assert first["resourceVersion"] == 1
+        assert first["resourceVersion"].startswith("1-")
         assert first["uid"]
         assert store.get("epishu/e1")["spec"] == {"n": 1}
         assert store.get("epishu/missing") is None
-        assert [v["resourceVersion"] for v in store.list("epishu/")] == [1, 2]
-        assert len(store.list()) == 3
+        listed, token = store.list("epishu/")
+        assert token is None
+        assert [v["resourceVersion"].split("-", 1)[0] for v in listed] == ["1", "2"]
+        assert len(store.list()[0]) == 3
 
         assert store.delete("epishu/e1", expected_rev=1) is None
         assert store.get("epishu/e1") is None
@@ -64,7 +71,7 @@ def test_cas_conflict(tmp_path: Path):
         put(store, "epishu/e1", 1, expected_rev=0)
         with pytest.raises(ConflictError):
             put(store, "epishu/e1", 2, expected_rev=0)
-        assert store.get("epishu/e1")["resourceVersion"] == 1
+        assert store.get("epishu/e1")["resourceVersion"].startswith("1-")
         put(store, "epishu/e1", 2, expected_rev=1)
         with pytest.raises(ConflictError):
             store.delete("epishu/e1", expected_rev=1)
@@ -86,7 +93,7 @@ def test_restart_and_meta(tmp_path: Path):
     with Store(path) as reopened:
         assert reopened.get("epishu/e1")["spec"] == {"n": 2}
         third = put(reopened, "epishu/e2", 3, expected_rev=0)
-        assert third["resourceVersion"] == 3
+        assert third["resourceVersion"].startswith("3-")
         report = reopened.fsck()
         assert report.ok is True
         assert report.rev == 3
@@ -205,9 +212,7 @@ def _rewrite_record(segment: Path, index: int, mutate) -> None:
     lines = segment.read_text(encoding="utf-8").splitlines()
     record = json.loads(lines[index])
     mutate(record)
-    record["hash"] = _txn_hash(
-        int(record["rev"]), str(record["prev"]), record["txn"]
-    )
+    record["hash"] = _record_hash(record)
     lines[index] = json.dumps(record, sort_keys=True, separators=(",", ":"))
     segment.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -254,7 +259,7 @@ def test_property_model_vs_store(tmp_path: Path):
             expected = current["resourceVersion"] if current else 0
             conflict = rng.random() < 0.10
             if conflict:
-                expected += 1
+                expected = "stale-resourceVersion"
             if rng.random() < 0.65:
                 try:
                     value = store.put(
@@ -263,19 +268,19 @@ def test_property_model_vs_store(tmp_path: Path):
                         expected_rev=expected,
                     )
                 except ConflictError:
-                    assert expected != (current["resourceVersion"] if current else 0)
+                    assert current is None or expected != current["resourceVersion"]
                     continue
                 model[key] = value
             else:
                 try:
                     store.delete(key, expected_rev=expected)
                 except ConflictError:
-                    assert expected != (current["resourceVersion"] if current else 0)
+                    assert current is None or expected != current["resourceVersion"]
                     continue
                 model.pop(key, None)
 
             assert store.get(key) == model.get(key)
-            assert len(store.list()) == len(model)
+            assert len(store.list()[0]) == len(model)
 
         assert store.fsck().ok is True
         assert store.verify() is True
@@ -298,7 +303,7 @@ def test_group_commit_batches_with_one_fsync(tmp_path: Path):
         assert stats["ops"] == count
         assert stats["max_batch"] > 1
         assert stats["fsyncs"] < count
-        assert len(store.list("epishu/")) == count
+        assert len(store.list("epishu/")[0]) == count
 
 
 def test_watch_and_request_idempotency(tmp_path: Path):
@@ -311,13 +316,14 @@ def test_watch_and_request_idempotency(tmp_path: Path):
         put(store, "epishu/e2", 2, expected_rev=0)
         events = list(store.watch(0, timeout=0.01))
         assert [event["rev"] for event in events] == [1, 2]
-        assert events[0]["txn"][0]["op"] == "put"
+        assert events[0]["type"] == "ADDED"
+        assert events[0]["key"] == "epishu/e1"
         assert list(store.watch(2, timeout=0.01)) == []
 
         store.delete("epishu/e1")
         event = list(store.watch(2, timeout=0.01))[-1]
         assert event["rev"] == 3
-        assert event["txn"][0]["op"] == "del"
+        assert event["type"] == "DELETED"
 
 
 def test_snapshot_and_restore_from_copy(tmp_path: Path):
@@ -343,6 +349,284 @@ def test_commit_window_bounds(tmp_path: Path):
     for value in (0.001, 0.02):
         with pytest.raises(ValueError):
             Store(tmp_path / f"store-{value}", commit_window=value)
+
+
+
+def test_jcs_golden_and_nfc():
+    assert _jcs({"b": 1, "a": "é"}) == b'{"a":"\xc3\xa9","b":1}'
+    assert _jcs({"x": 1, "y": [True, None]}) == b'{"x":1,"y":[true,null]}'
+    assert _normalize({"cafe\u0301": "cafe\u0301"}) == {"café": "café"}
+
+
+def test_hash_covers_actor_ts_request_id(tmp_path: Path):
+    for field in ("actor", "ts", "requestId"):
+        path = tmp_path / f"store-{field}"
+        store = Store(path)
+        store.put("epishu/e1", {"spec": {"n": 1}}, request_id="req", actor="alice")
+        store.close()
+        segment = sorted((path / "log").glob("*.jsonl"))[-1]
+        record = json.loads(segment.read_text(encoding="utf-8").splitlines()[0])
+        record[field] = "tampered"
+        segment.write_text(
+            json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        report = store_fsck.fsck(path)
+        assert report.ok is False, field
+        assert any("hash mismatch" in error for error in report.errors), field
+
+
+def test_nfc_key_and_value(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        stored = store.put(
+            "epishu/cafe",
+            {"spec": {"label": "cafe\u0301"}},
+            expected_rev=0,
+        )
+        assert stored["resourceVersion"].endswith(stored["uid"][:8])
+        assert store.get("epishu/cafe")["spec"]["label"] == "café"
+
+
+def test_value_and_line_limits(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        with pytest.raises(PayloadTooLarge):
+            store.put("epishu/big", {"blob": "x" * (1024 * 1024 + 1)})
+        # A huge non-value field is rejected at journal-line size (2 MiB).
+        with pytest.raises(PayloadTooLarge):
+            store.put(
+                "epishu/line",
+                {"spec": {}},
+                request_id="r" * (2 * 1024 * 1024),
+            )
+
+
+def test_fail_stop_enospc_and_eio(tmp_path: Path, monkeypatch):
+    path = tmp_path / "store"
+    store = Store(path, commit_window=0.002)
+    store.put("epishu/e1", {"spec": {"n": 1}}, expected_rev=0)
+    committed = json.loads((path / "meta.json").read_text())["committedOffset"]
+    original = store._fsync_fd
+
+    for errno_value in (28, 5):  # ENOSPC, EIO
+        def broken(fd: int, errno_value=errno_value):
+            raise OSError(errno_value, "simulated I/O failure")
+
+        segment = sorted((path / "log").glob("*.jsonl"))[-1]
+        size_before = segment.stat().st_size
+        store._fsync_fd = broken
+        with pytest.raises(DurabilityError):
+            store.put(f"epishu/e{errno_value}", {"spec": {"n": 2}}, expected_rev=0)
+        assert segment.stat().st_size == size_before
+        assert store.read_only is True
+        assert json.loads((path / "meta.json").read_text())["committedOffset"] == committed
+        with pytest.raises(StoreReadOnly):
+            store.put(f"epishu/e{errno_value}b", {"spec": {}}, expected_rev=0)
+        report = store.fsck()
+        assert report.ok is True
+        assert store.read_only is False
+        store._fsync_fd = original
+        store.put(f"epishu/e{errno_value}ok", {"spec": {}}, expected_rev=0)
+        committed = json.loads((path / "meta.json").read_text())["committedOffset"]
+
+    store.close()
+
+
+
+def test_fail_stop_on_write_error(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path, commit_window=0.002)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    size_before = segment.stat().st_size
+
+    def broken_write(segment_path, lines):
+        raise OSError(28, "simulated ENOSPC on write")
+
+    store._append_lines = broken_write
+    with pytest.raises(DurabilityError):
+        store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+    assert segment.stat().st_size == size_before
+    assert store.read_only is True
+    assert store.fsck().ok is True
+    assert store.read_only is False
+    store.close()
+
+
+def test_cas_race_50(tmp_path: Path):
+    count = 50
+    barrier = threading.Barrier(count)
+    with Store(tmp_path / "store", commit_window=0.010) as store:
+        initial = store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+
+        def update(index: int):
+            barrier.wait()
+            try:
+                return store.put(
+                    "epishu/e1",
+                    {"spec": {"n": index}},
+                    expected_rev=initial["resourceVersion"],
+                )
+            except ConflictError as exc:
+                return exc
+
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            results = list(pool.map(update, range(count)))
+        successes = [r for r in results if isinstance(r, dict)]
+        conflicts = [r for r in results if isinstance(r, ConflictError)]
+        assert len(successes) == 1
+        assert len(conflicts) == count - 1
+        updated = store.get("epishu/e1")
+        assert updated["resourceVersion"].split("-", 1)[0] == "2"
+        assert updated["spec"] == {"n": successes[0]["spec"]["n"]}
+
+
+def test_100_watchers_and_bounded_410(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        watchers = [store.watch(0, timeout=1.0) for _ in range(100)]
+        for index in range(10):
+            store.put(f"epishu/e{index}", {"spec": {"n": index}}, expected_rev=0)
+        with ThreadPoolExecutor(max_workers=100) as pool:
+            results = list(pool.map(lambda watcher: list(watcher), watchers))
+        assert all(len(events) == 10 for events in results)
+        assert all(
+            len({(e["rev"], e["seq"]) for e in events}) == 10
+            for events in results
+        )
+
+    with Store(tmp_path / "bounded", watch_buffer=2) as store:
+        watcher = store.watch(0)
+        for index in range(4):
+            store.put(f"epishu/e{index}", {"spec": {"n": index}}, expected_rev=0)
+        with pytest.raises(WatchGone) as exc:
+            next(watcher)
+        assert exc.value.code == 410
+
+
+
+def test_watch_1000_writes_no_loss_or_duplicates(tmp_path: Path):
+    with Store(tmp_path / "store", commit_window=0.002) as store:
+        watcher = store.watch(0, timeout=15.0)
+        for index in range(1000):
+            store.put(
+                f"epishu/e{index}",
+                {"spec": {"n": index}},
+                expected_rev=0,
+            )
+        events = list(watcher)
+    assert len(events) == 1000
+    assert len({(event["rev"], event["seq"]) for event in events}) == 1000
+    assert [event["rev"] for event in events] == list(range(1, 1001))
+
+
+def test_anchor_truncation_fails(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.put("epishu/e2", {"spec": {}}, expected_rev=0)
+    store.put("epishu/e3", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    store.close()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    lines = segment.read_text(encoding="utf-8").splitlines()
+    segment.write_text("\n".join(lines[:1]) + "\n", encoding="utf-8")
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("below anchor" in error for error in report.errors)
+    with pytest.raises(StoreCorrupt):
+        Store(path)
+
+
+def test_dry_run_and_pagination(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        preview = store.put("epishu/e1", {"spec": {"n": 1}}, expected_rev=0, dry_run=True)
+        assert preview["resourceVersion"].endswith("-preview")
+        assert store.get("epishu/e1") is None
+
+        for index in range(4):
+            store.put(f"epishu/e{index}", {"spec": {"n": index}}, expected_rev=0)
+        first, token = store.list("epishu/", limit=2)
+        assert len(first) == 2
+        assert token is not None
+        second, token2 = store.list("epishu/", limit=2, continue_token=token)
+        assert len(second) == 2
+        assert token2 is None
+        all_items, _ = store.list("epishu/")
+        assert {v["resourceVersion"] for v in first + second} == {
+            v["resourceVersion"] for v in all_items
+        }
+
+
+
+def test_resource_version_and_generation(tmp_path: Path):
+    with Store(tmp_path / "store") as store:
+        first = store.put("epishu/e1", {"spec": {"n": 1}}, expected_rev=0)
+        assert first["resourceVersion"] == f"1-{first['uid'][:8]}"
+        assert first["generation"] == 1
+
+        status_only = store.put(
+            "epishu/e1", {"spec": {"n": 1}, "status": {"phase": "Ready"}},
+            expected_rev=first["resourceVersion"],
+        )
+        assert status_only["generation"] == 1
+        spec_change = store.put(
+            "epishu/e1", {"spec": {"n": 2}, "status": {"phase": "Ready"}},
+            expected_rev=status_only["resourceVersion"],
+        )
+        assert spec_change["generation"] == 2
+        assert spec_change["resourceVersion"].split("-", 1)[0] == "3"
+
+
+
+
+def test_non_nfc_journal_is_rejected(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.close()
+    segment = sorted((path / "log").glob("*.jsonl"))[-1]
+    record = json.loads(segment.read_text(encoding="utf-8").splitlines()[0])
+    record["txn"][0]["value"]["spec"]["label"] = "cafe\u0301"
+    record["hash"] = _record_hash(record)
+    segment.write_text(
+        json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n",
+        encoding="utf-8",
+    )
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("non-NFC" in error for error in report.errors)
+
+
+def test_anchor_signature_is_checked(tmp_path: Path):
+    path = tmp_path / "store"
+    store = Store(path)
+    store.put("epishu/e1", {"spec": {}}, expected_rev=0)
+    store.anchor()
+    store.close()
+    anchor = sorted((path / "anchor").glob("*.anchor"))[0]
+    payload = json.loads(anchor.read_text(encoding="utf-8"))
+    payload["sig"] = "hmac-sha256:" + "0" * 64
+    anchor.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    report = store_fsck.fsck(path)
+    assert report.ok is False
+    assert any("signature" in error for error in report.errors)
+    with pytest.raises(StoreCorrupt):
+        Store(path)
+
+
+def test_anchor_written_every_interval(tmp_path: Path, monkeypatch):
+    import massaru.store as store_module
+
+    monkeypatch.setattr(store_module, "ANCHOR_INTERVAL", 2)
+    with Store(tmp_path / "store") as store:
+        for index in range(3):
+            store.put(f"epishu/e{index}", {"spec": {"n": index}}, expected_rev=0)
+    anchors = sorted((tmp_path / "store" / "anchor").glob("*.anchor"))
+    assert anchors
+    assert store.fsck().ok is True
 
 
 def test_no_lmdb_dependency():

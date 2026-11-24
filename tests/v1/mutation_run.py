@@ -98,14 +98,8 @@ MUTANTS: list[dict[str, str]] = [
         "name": "store_skips_cas",
         "file": "massaru/store.py",
         "test": "test_cas_conflict",
-        "old": """            if (
-                request.expected_rev is not None
-                and request.expected_rev != current_rev
-            ):""",
-        "new": """            if (
-                False and request.expected_rev is not None
-                and request.expected_rev != current_rev
-            ):""",
+        "old": """                if not _rv_matches(request.expected_rev, current_rv, current):""",
+        "new": """                if False:""",
     },
     {
         "id": "M9",
@@ -139,37 +133,79 @@ MUTANTS: list[dict[str, str]] = [
         "id": "M11",
         "name": "store_skips_hash_check",
         "file": "massaru/store.py",
-        "test": "test_corrupt_middle_fails_fsck_and_start",
-        "old": """            if digest != _txn_hash(rev, prev, txn):
-                report.errors.append(f"hash mismatch at rev {rev}")
-                break""",
-        "new": """            if False:
-                report.errors.append(f"hash mismatch at rev {rev}")
-                break""",
+        "test": "test_hash_covers_actor_ts_request_id",
+        "old": """                if digest != _record_hash(record):
+                    report.errors.append(f"hash mismatch at rev {rev}")
+                    break""",
+        "new": """                if False:
+                    report.errors.append(f"hash mismatch at rev {rev}")
+                    break""",
     },
     {
         "id": "M12",
         "name": "store_skips_fsync",
         "file": "massaru/store.py",
         "test": "test_fsync_is_called_before_ack",
-        "old": """                for line in lines:
-                    handle.write(line)
-                handle.flush()
-                self._fsync_fd(handle.fileno())""",
-        "new": """                for line in lines:
-                    handle.write(line)
-                handle.flush()""",
+        "old": """            for line in lines:
+                handle.write(line)
+            handle.flush()
+            self._fsync_fd(handle.fileno())""",
+        "new": """            for line in lines:
+                handle.write(line)
+            handle.flush()""",
     },
     {
         "id": "M13",
         "name": "store_does_not_update_meta",
         "file": "massaru/store.py",
         "test": "test_restart_and_meta",
-        "old": """        self._stats["fsyncs"] += 1
-        self._write_meta()
-        self._materialize(changed, state)""",
-        "new": """        self._stats["fsyncs"] += 1
-        self._materialize(changed, state)""",
+        "old": """            self._maybe_anchor(rev, last_hash)
+            self._write_meta()""",
+        "new": """            self._maybe_anchor(rev, last_hash)""",
+    },
+    {
+        "id": "M14",
+        "name": "store_skips_anchor_check",
+        "file": "massaru/store.py",
+        "test": "test_anchor_truncation_fails",
+        "old": """                    if report.rev < anchor_rev:
+                        report.errors.append(
+                            "journal truncated below anchor"
+                        )""",
+        "new": """                    if False:
+                        report.errors.append(
+                            "journal truncated below anchor"
+                        )""",
+    },
+    {
+        "id": "M15",
+        "name": "store_disables_watch_410",
+        "file": "massaru/store.py",
+        "test": "test_100_watchers_and_bounded_410",
+        "old": """            if len(subscriber.queue) >= self.watch_buffer:""",
+        "new": """            if False:""",
+    },
+    {
+        "id": "M16",
+        "name": "store_disables_value_limit",
+        "file": "massaru/store.py",
+        "test": "test_value_and_line_limits",
+        "old": """        if len(_jcs(normalized)) > MAX_VALUE_BYTES:
+            raise PayloadTooLarge("value exceeds 1 MiB")""",
+        "new": """        if False:
+            raise PayloadTooLarge("value exceeds 1 MiB")""",
+    },
+    {
+        "id": "M17",
+        "name": "store_fail_stop_does_not_truncate",
+        "file": "massaru/store.py",
+        "test": "test_fail_stop_enospc_and_eio",
+        "old": """            with segment.open("r+b") as handle:
+                handle.truncate(batch_start)
+                handle.flush()
+                self._fsync_fd(handle.fileno())""",
+        "new": """            with segment.open("r+b") as handle:
+                handle.flush()""",
     },
 ]
 
