@@ -33,11 +33,14 @@ def test_epishu_to_dict_and_roundtrip() -> None:
         spec=EpishuSpec(zi_ref="zi", su_ref="su"),
         status=EpishuStatus(phase="Pending"),
         resource_version=7,
+        uid="uid-1",
     )
+    assert original.rev == 7
     payload = original.to_dict()
     assert payload["apiVersion"] == "nemeq.io/v1alpha1"
     assert payload["kind"] == "Epishu"
     assert payload["name"] == "e"
+    assert payload["uid"] == "uid-1"
     assert payload["spec"]["zi_ref"] == "zi"
     assert payload["status"]["phase"] == "Pending"
     assert payload["resourceVersion"] == 7

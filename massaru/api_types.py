@@ -22,11 +22,17 @@ class APIObject:
     api_version: ClassVar[str] = API_VERSION
     kind: ClassVar[str] = ""
 
+    @property
+    def rev(self) -> int:
+        """API revision alias (resourceVersion)."""
+        return int(self.resource_version)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "apiVersion": self.api_version,
             "kind": self.kind,
             "name": getattr(self, "name", ""),
+            "uid": getattr(self, "uid", ""),
             "spec": asdict(self.spec),
             "status": asdict(self.status),
             "resourceVersion": int(self.resource_version),
@@ -39,6 +45,7 @@ class APIObject:
         status_type = hints["status"]
         return cls(
             name=str(payload.get("name", "")),
+            uid=str(payload.get("uid", "")),
             spec=spec_type(**payload.get("spec", {})),
             status=status_type(**payload.get("status", {})),
             resource_version=int(payload.get("resourceVersion", 0)),
@@ -65,6 +72,7 @@ class Zi(APIObject):
     spec: ZiSpec
     status: ZiStatus = field(default_factory=ZiStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -89,6 +97,7 @@ class Su(APIObject):
     spec: SuSpec
     status: SuStatus = field(default_factory=SuStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -121,6 +130,7 @@ class Epishu(APIObject):
     spec: EpishuSpec
     status: EpishuStatus = field(default_factory=EpishuStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -147,6 +157,7 @@ class Session(APIObject):
     spec: SessionSpec
     status: SessionStatus = field(default_factory=SessionStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -169,6 +180,7 @@ class Grant(APIObject):
     spec: GrantSpec
     status: GrantStatus = field(default_factory=GrantStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -192,6 +204,7 @@ class Quota(APIObject):
     spec: QuotaSpec
     status: QuotaStatus = field(default_factory=QuotaStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -216,6 +229,7 @@ class Model(APIObject):
     spec: ModelSpec
     status: ModelStatus = field(default_factory=ModelStatus)
     resource_version: int = 0
+    uid: str = ""
 
 
 @dataclass
@@ -239,3 +253,4 @@ class Effect(APIObject):
     spec: EffectSpec
     status: EffectStatus = field(default_factory=EffectStatus)
     resource_version: int = 0
+    uid: str = ""

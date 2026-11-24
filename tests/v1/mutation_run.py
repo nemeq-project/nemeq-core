@@ -93,6 +93,47 @@ MUTANTS: list[dict[str, str]] = [
         "old": """    if spec.read_only is not True:""",
         "new": """    if False:""",
     },
+    {
+        "id": "M8",
+        "name": "journal_skips_fsync",
+        "file": "massaru/journal.py",
+        "test": "test_fsync_failure_is_not_acknowledged",
+        "old": """                    with segment.open("ab") as handle:
+                        handle.write(line)
+                        handle.flush()
+                        os.fsync(handle.fileno())""",
+        "new": """                    with segment.open("ab") as handle:
+                        handle.write(line)
+                        handle.flush()""",
+    },
+    {
+        "id": "M9",
+        "name": "journal_skips_hash_verification",
+        "file": "massaru/journal.py",
+        "test": "test_bit_flip_raises_corrupt",
+        "old": """        if record.hash != expected:""",
+        "new": """        if False:""",
+    },
+    {
+        "id": "M10",
+        "name": "journal_append_does_not_repair_torn_tail",
+        "file": "massaru/journal.py",
+        "test": "test_torn_tail_is_repaired_only_in_last_segment",
+        "old": """                records = self.read_all(repair=True)
+                last = records[-1] if records else None
+                last_rev = last.rev if last else 0""",
+        "new": """                records = self.read_all()
+                last = records[-1] if records else None
+                last_rev = last.rev if last else 0""",
+    },
+    {
+        "id": "M11",
+        "name": "journal_ignores_cas_precondition",
+        "file": "massaru/journal.py",
+        "test": "test_cas_prev_rev_conflict",
+        "old": """                if expected_rev is not None and expected_rev != last_rev:""",
+        "new": """                if False:""",
+    },
 ]
 
 
