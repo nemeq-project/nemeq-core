@@ -34,9 +34,9 @@
 
 ---
 
-## 3. Store: текстовый журнал (TEXTSTORE v0.1)
+## 3. Store: текстовый журнал (TEXTSTORE v0.2)
 
-Источник истины — **append-only журнал JSONL**; состояние — материализация; MD/CSV — представления. Ноль зависимостей, audit by construction. Детали, формат, восстановление, замеры и тесты — `TEXTSTORE_v0.1.md`.
+Источник истины — **append-only журнал JSONL**; состояние — материализация; MD/CSV — представления. Ноль зависимостей, audit by construction. Детали, формат, восстановление, замеры и тесты — `TEXTSTORE_v0.2.md`.
 
 Коротко:
 - одна строка = одна транзакция (`rev`, `prev`, `txn`, `hash`), глобальный hash-chain;
@@ -50,6 +50,7 @@
 1. `resourceVersion` на каждом объекте; update/delete с предусловием; 409 при конфликте.
 2. `watch` c `fromRev`, `ADDED/MODIFIED/DELETED`, bookmarks, разрыв → relist.
 3. `spec/status`; `status` — subresource, пишет только контроллер.
+3a. `rev` vs `resourceVersion`: `rev` — глобальный int для watch/bookmarks; `resourceVersion` — строка `<rev>-<uid8>` для CAS. Устаревшая → 410. `generation`/`observedGeneration`; Lease для лидерства контроллеров.
 4. Admission: validation → defaults → authz → quota → policy → persist. v1 policy: deny внешних эффектов и write-capability.
 5. Finalizers/`deletionTimestamp`: удаление Epishu = остановка сессии → снятие объекта.
 6. Audit: запись в журнал (кто, что, hashes, requestId) + экспорт.
@@ -150,7 +151,7 @@
 5. Restore из снапшота + сегментов → ревизия и состояние совпадают.
 6. Попытка создать Epishu с внешним эффектом → 403 admission.
 7. Каждая запись в audit: actor, requestId, hashes; подмена байта в сегменте ловится.
-8. p99 API < 50 мс при 50 rps на одном узле.
+8. SLO (гистограммы): read p99 ≤ 50 мс; write p99 ≤ 150 мс при ≤50 rps, p95 ≤ 100 мс.
 
 ---
 
