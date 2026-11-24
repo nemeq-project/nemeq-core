@@ -95,10 +95,10 @@
 ## 4. Целостность и обнаружение усечения
 
 1. Hash покрывает **всю** запись (fmt/rev/prev/ts/actor/requestId/txn).
-2. **Якорь Ed25519 + off-host watermark:** `anchor/<rev>.anchor` = `{rev, hash, prevAnchorHash, keyId, sig}`; `anchor/state.json` = `{lastAnchorRev, lastAnchorHash, sinkAckRev, lag, updatedAt}` — **вне meta**. Якорь на снапшоте и чистой остановке; off-host **watermark** каждые 60 с или 1 000 rev (WORM sink). Протокол: journal fsync → подпись → fsync якоря → off-host ack → `anchor/state.json`. Если sink недоступен — `DEGRADED` + алерт; `max_anchor_lag` = 5 000 rev / 5 мин → read-only (507). Старт: sink доступен и локальный watermark < remote → FAIL; sink недоступен → DEGRADED с алертом; после восстановления — catch-up с непрерывной `prevAnchorHash`.
+2. **Якорь Ed25519 + off-host watermark:** `anchor/<rev>.anchor` = `{rev, hash, prevAnchorHash, keyId, sig}`; `anchor/state.json` = `{lastAnchorRev, lastAnchorHash, sinkAckRev, lag, updatedAt}` — **вне meta**. Якорь на снапшоте и чистой остановке; off-host **watermark** каждые 60 с или 1 000 rev (WORM sink). Протокол: journal fsync → подпись → fsync якоря → off-host ack → `anchor/state.json`. Если sink недоступен — `DEGRADED` + алерт; `max_anchor_lag` = 5 000 rev / 5 мин → read-only (507). В `DEGRADED` проверка усечения ниже watermark **откладывается до catch-up** (иначе она непроверяема); запись разрешена только до `max_anchor_lag`, alert обязателен, после восстановления sink — сверка и catch-up. Старт: sink доступен и локальный watermark < remote → FAIL; sink недоступен → DEGRADED с алертом; после восстановления — catch-up с непрерывной `prevAnchorHash`.
 3. **fsck / fsck --remote**:
    - цепочка/`rev`/JCS — обязательны;
-   - `committedOffset` совпадает с последней валидной строкой;
+   - `committedOffset` = конец последнего **commit**; валидные транзакции после него считаются `uncommitted` и обрезаются с `repair` (не «последняя валидная строка»);
    - `rev`/`hash` не меньше последнего **локального** якоря и не меньше **off-host watermark** (по `rev`, `hash`, `prevAnchorHash`, `keyId`);
    - **усечение хвоста ниже якоря → FAIL**, старт запрещён (не «torn tail»);
    - подмена локального якоря и пересчёт цепочки → расхождение с off-host/`prevAnchorHash`.
