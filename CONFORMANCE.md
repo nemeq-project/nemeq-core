@@ -14,8 +14,8 @@ python3 tools/lint.py
 python3 kernel/mutation_run.py
 python3 agents/tests/mutation_run.py
 python3 tests/v1/mutation_run.py
-python3 tools/soak.py --profile A --duration 600 --warmup 10
-python3 tools/soak.py --profile B --duration 600 --warmup 10
+python3 tools/soak.py --profile A --duration 600 --warmup 10 --store /ext4/path/A
+python3 tools/soak.py --profile B --duration 600 --warmup 10 --store /ext4/path/B
 ```
 
 Required: all tests pass; coverage ≥ 70%; lint clean; TEXTSTORE mutants
@@ -42,7 +42,10 @@ watch 410, limits, fail-stop, uncommitted batch).
 | value 1 MiB+/line 2 MiB+ | `413`; no journal line |
 | JCS golden vectors | byte-for-byte expected |
 | restore snapshot + segments/copy | `rev`, `hash`, state match |
-| SLO | read p99 ≤50 ms; write A ≤150 ms at ≤20 rps, B ≤250 ms at ≤50 rps after 10-min soak |
+| one fsync per batch | journal fsync count == commits; no meta/state/view/anchor fsync before response |
+| group commit | 20 rps → avgBatch 1–2; maxBatch ≤1000 |
+| soak filesystem | ext4 only; tmpfs exits 2 |
+| SLO | **current status: A/B FAIL** — see `SOAK.md`; profiles outside SLO until retuned |
 
 ## 3. Documents
 

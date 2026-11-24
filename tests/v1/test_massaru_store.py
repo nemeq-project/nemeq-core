@@ -60,6 +60,7 @@ def test_put_get_list_delete_and_materialization(tmp_path: Path):
         assert store.get("epishu/e1") is None
         store.delete("epishu/e1")
         assert store.verify() is True
+        store.flush()
 
         assert (path / "state" / "epishu" / "e1.json").exists() is False
         assert (path / "state" / "epishu" / "e2.json").is_file()
@@ -86,6 +87,7 @@ def test_restart_and_meta(tmp_path: Path):
     store = Store(path)
     put(store, "epishu/e1", 1, expected_rev=0)
     put(store, "epishu/e1", 2, expected_rev=1)
+    store.flush()
     live_meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
     assert live_meta["rev"] == 2
     store.close()
@@ -128,6 +130,8 @@ def test_fsync_is_called_before_ack(tmp_path: Path):
     put(store, "epishu/e1", 1, expected_rev=0)
     assert called
     assert store.stats()["fsyncs"] == 1
+    store.flush()
+    assert len(called) == 1
     store.close()
 
 
@@ -408,6 +412,7 @@ def test_fail_stop_enospc_and_eio(tmp_path: Path, monkeypatch):
     path = tmp_path / "store"
     store = Store(path, commit_window=0.002)
     store.put("epishu/e1", {"spec": {"n": 1}}, expected_rev=0)
+    store.flush()
     committed = json.loads((path / "meta.json").read_text())["committedOffset"]
     original = store._fsync_fd
 
@@ -422,6 +427,7 @@ def test_fail_stop_enospc_and_eio(tmp_path: Path, monkeypatch):
             store.put(f"epishu/e{errno_value}", {"spec": {"n": 2}}, expected_rev=0)
         assert segment.stat().st_size == size_before
         assert store.read_only is True
+        store.flush()
         assert json.loads((path / "meta.json").read_text())["committedOffset"] == committed
         with pytest.raises(StoreReadOnly):
             store.put(f"epishu/e{errno_value}b", {"spec": {}}, expected_rev=0)
@@ -430,6 +436,7 @@ def test_fail_stop_enospc_and_eio(tmp_path: Path, monkeypatch):
         assert store.read_only is False
         store._fsync_fd = original
         store.put(f"epishu/e{errno_value}ok", {"spec": {}}, expected_rev=0)
+        store.flush()
         committed = json.loads((path / "meta.json").read_text())["committedOffset"]
 
     store.close()

@@ -36,8 +36,12 @@ A change that violates an invariant is a gate failure.
 - One writer holds `flock` on `lock`; a second writer gets `EBUSY`.
 - CAS is checked during batch build under the writer lock. N concurrent
   updates with one `resourceVersion` → exactly one success.
-- Group commit window 2–10 ms; one fsync per batch; response only after the
-  journal fsync.
+- Group commit window 2–10 ms; **one journal fsync per batch**; response only
+  after that fsync.
+- `meta`, `state/`, `views/`, automatic anchors and snapshots are **not** on
+  the batch critical path. They are written by the maintenance thread after
+  publication; `Store.flush()` waits for derived state. Snapshot/anchor are
+  explicit maintenance operations.
 - `requestId` dedup is rebuilt from committed transactions; an incomplete
   batch never contributes to dedup.
 
@@ -73,7 +77,12 @@ A change that violates an invariant is a gate failure.
 - `dryRun`, `limit/continue`, `Lease`, 409/410/413/422/503/507 per
   `API_SCHEMA.md`.
 
-## 7. SLO (only after 10-minute soak)
+## 7. Soak / SLO (only after 10-minute ext4 soak)
+
+`tools/soak.py --store PATH` requires `PATH` on **ext4**; `/tmp`/tmpfs exits
+2. Soak records p99 journal fsync, p95/p99 end-to-end, read p99, histograms
+and `commits/fsyncs/maxBatch/avgBatch`. A profile without a 10-minute ext4
+run is outside SLO; a failing profile is removed, not excused.
 
 | Metric | SLO |
 |---|---|
@@ -81,8 +90,12 @@ A change that violates an invariant is a gate failure.
 | Write p99 A | ≤ 150 ms at ≤20 rps, window 10 ms |
 | Write p99 B | ≤ 250 ms at ≤50 rps, window 25 ms |
 | Write p95 | ≤100 ms (A) / ≤180 ms (B) |
+| Journal fsync p99 | reported per profile (no hidden fsyncs on path) |
 | Replay 1M rev | ≤60 s (snapshot + tail) |
 | fsck / fsck --remote 1M rev | ≤120 s / ≤180 s |
 
 A profile without a 10-minute soak is **outside SLO**. If a profile fails,
-lower rps/widen the window; do not claim an unverified SLO.
+lower rps/widen the window and re-measure; do not claim an unverified SLO.
+Measured 2026-11-24 on ext4: **A/B fail** (A write p95/p99 161/193 ms,
+B 255/309 ms; p99 fsync 99/106 ms). Both profiles are outside SLO until
+retuned; see `SOAK.md`.

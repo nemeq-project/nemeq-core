@@ -188,25 +188,27 @@ def _state_path(base: Path, key: str) -> Path:
     return base / STATE_DIR / resource / f"{name}.json"
 
 
-def _write_atomic(path: Path, data: bytes) -> None:
+def _write_atomic(path: Path, data: bytes, sync: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
-            os.fsync(handle.fileno())
+            if sync:
+                os.fsync(handle.fileno())
         os.replace(temp, path)
-        try:
-            dir_fd = os.open(
-                path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-            )
+        if sync:
             try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except OSError:
-            pass
+                dir_fd = os.open(
+                    path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                )
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except OSError:
+                pass
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
@@ -773,12 +775,24 @@ class Store:
         self._closed = False
         self._busy = threading.Event()
         self._busy.set()
+        self._maint_event = threading.Event()
+        self._maint_idle = threading.Event()
+        self._maint_idle.set()
+        self._maint_stop = False
+        self._dirty = False
+        self._dirty_keys: set[str] = set()
         self._subscribers: set[_Subscriber] = set()
         self._stats = {"commits": 0, "ops": 0, "max_batch": 0, "fsyncs": 0}
         self._startup_anchor_check()
         self._write_meta()
         self._materialize_all()
         self._write_views()
+        self._maint_thread = threading.Thread(
+            target=self._maintenance_loop,
+            name="nemeq-store-maintenance",
+            daemon=True,
+        )
+        self._maint_thread.start()
         self._writer = threading.Thread(
             target=self._writer_loop,
             name="nemeq-store-writer",
@@ -864,7 +878,7 @@ class Store:
             "status": status,
         }
         _write_atomic(
-            self.path / ANCHOR_DIR / "state.json", _jcs(state) + b"\n"
+            self.path / ANCHOR_DIR / "state.json", _jcs(state) + b"\n", sync=False
         )
         alert = self.path / VIEWS_DIR / "alert.md"
         if status == "DEGRADED":
@@ -911,6 +925,41 @@ class Store:
         except OSError:
             return None
 
+    def flush(self, timeout: float = 60.0) -> None:
+        """Wait for derived meta/state/anchor maintenance (not journal fsync)."""
+        if not self._maint_idle.wait(timeout=timeout):
+            raise StoreError("maintenance did not become idle")
+
+    def _maintenance_loop(self) -> None:
+        while True:
+            self._maint_event.wait()
+            if self._maint_stop:
+                return
+            with self._lock:
+                if not self._dirty:
+                    self._maint_event.clear()
+                    if not self._maint_stop:
+                        self._maint_idle.set()
+                    continue
+                state = copy.deepcopy(self._state)
+                keys = set(self._dirty_keys)
+                self._dirty_keys.clear()
+                self._dirty = False
+                rev = self._rev
+                last_hash = self._last_hash
+            try:
+                self._write_meta()
+                self._materialize(keys, state)
+                self._maybe_anchor(rev, last_hash)
+            except Exception:
+                # Derived materialization must never make the write path
+                # unavailable; anchor failures are handled by _maybe_anchor.
+                pass
+            with self._lock:
+                if not self._dirty:
+                    self._maint_idle.set()
+                    self._maint_event.clear()
+
     # -- lifecycle -------------------------------------------------------
     def _check_open(self) -> None:
         if self._closed:
@@ -927,11 +976,18 @@ class Store:
             self._stopping = True
             self._cond.notify_all()
         self._writer.join(timeout=10.0)
+        try:
+            self.flush(timeout=60.0)
+        except Exception:
+            pass
         if not self._read_only:
             try:
                 self.anchor()
             except Exception:
                 pass
+        self._maint_stop = True
+        self._maint_event.set()
+        self._maint_thread.join(timeout=10.0)
         if self._lock_fd >= 0:
             fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
             os.close(self._lock_fd)
@@ -1337,13 +1393,14 @@ class Store:
             self._committed_offset = batch_start + total_bytes
             self._segment_name = segment.name
             self._stats["fsyncs"] += 1
-            self._maybe_anchor(rev, last_hash)
-            self._write_meta()
+            self._dirty = True
+            self._dirty_keys.update(changed)
+            self._maint_idle.clear()
+            self._maint_event.set()
             for subscriber in list(self._subscribers):
                 for event in new_events:
                     if not self._enqueue(subscriber, event):
                         break
-            self._materialize(changed, state)
         try:
             self._after_fsync()
         except BaseException as exc:
@@ -1478,7 +1535,7 @@ class Store:
                 "segment": self._segment_name,
                 "anchor": anchor,
             }
-        _write_atomic(self.path / META_NAME, _jcs(payload) + b"\n")
+        _write_atomic(self.path / META_NAME, _jcs(payload) + b"\n", sync=False)
 
     def _materialize(
         self, changed: Iterable[str], state: dict[str, dict[str, Any]]
@@ -1486,13 +1543,15 @@ class Store:
         for key in changed:
             path = _state_path(self.path, key)
             if key in state:
-                _write_atomic(path, _jcs(state[key]) + b"\n")
+                _write_atomic(path, _jcs(state[key]) + b"\n", sync=False)
             elif path.exists():
                 path.unlink()
 
     def _materialize_all(self) -> None:
         for key, value in self._state.items():
-            _write_atomic(_state_path(self.path, key), _jcs(value) + b"\n")
+            _write_atomic(
+                _state_path(self.path, key), _jcs(value) + b"\n", sync=False
+            )
 
     def _write_views(self) -> None:
         views = self.path / VIEWS_DIR
@@ -1502,7 +1561,9 @@ class Store:
                 f"| {key} | {self._state[key].get('resourceVersion', '')} |"
             )
         _write_atomic(
-            views / "index.md", ("\n".join(index_lines) + "\n").encode("utf-8")
+            views / "index.md",
+            ("\n".join(index_lines) + "\n").encode("utf-8"),
+            sync=False,
         )
         audit_path = views / "audit.csv"
         audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1534,6 +1595,7 @@ class Store:
     # -- snapshots / fsck ------------------------------------------------
     def snapshot(self) -> int:
         self._check_open()
+        self.flush()
         if not self._busy.wait(timeout=5.0):
             raise StoreError("writer did not become idle")
         with self._lock:

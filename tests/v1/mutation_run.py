@@ -159,9 +159,11 @@ MUTANTS: list[dict[str, str]] = [
         "name": "store_does_not_update_meta",
         "file": "massaru/store.py",
         "test": "test_restart_and_meta",
-        "old": """            self._maybe_anchor(rev, last_hash)
-            self._write_meta()""",
-        "new": """            self._maybe_anchor(rev, last_hash)""",
+        "old": """                self._write_meta()
+                self._materialize(keys, state)
+                self._maybe_anchor(rev, last_hash)""",
+        "new": """                self._materialize(keys, state)
+                self._maybe_anchor(rev, last_hash)""",
     },
     {
         "id": "M14",
