@@ -49,8 +49,10 @@ def test_put_get_list_delete_and_materialization(tmp_path: Path):
         assert first["uid"]
         assert store.get("epishu/e1")["spec"] == {"n": 1}
         assert store.get("epishu/missing") is None
-        assert [v["resourceVersion"].split("-", 1)[0] for v in store.list("epishu/")] == ["1", "2"]
-        assert len(store.list()) == 3
+        listed, token = store.list("epishu/")
+        assert token is None
+        assert [v["resourceVersion"].split("-", 1)[0] for v in listed] == ["1", "2"]
+        assert len(store.list()[0]) == 3
 
         assert store.delete("epishu/e1", expected_rev=1) is None
         assert store.get("epishu/e1") is None
@@ -278,7 +280,7 @@ def test_property_model_vs_store(tmp_path: Path):
                 model.pop(key, None)
 
             assert store.get(key) == model.get(key)
-            assert len(store.list()) == len(model)
+            assert len(store.list()[0]) == len(model)
 
         assert store.fsck().ok is True
         assert store.verify() is True
@@ -301,7 +303,7 @@ def test_group_commit_batches_with_one_fsync(tmp_path: Path):
         assert stats["ops"] == count
         assert stats["max_batch"] > 1
         assert stats["fsyncs"] < count
-        assert len(store.list("epishu/")) == count
+        assert len(store.list("epishu/")[0]) == count
 
 
 def test_watch_and_request_idempotency(tmp_path: Path):
@@ -532,8 +534,9 @@ def test_dry_run_and_pagination(tmp_path: Path):
         second, token2 = store.list("epishu/", limit=2, continue_token=token)
         assert len(second) == 2
         assert token2 is None
+        all_items, _ = store.list("epishu/")
         assert {v["resourceVersion"] for v in first + second} == {
-            v["resourceVersion"] for v in store.list("epishu/")
+            v["resourceVersion"] for v in all_items
         }
 
 

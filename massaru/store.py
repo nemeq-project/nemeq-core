@@ -638,20 +638,19 @@ class Store:
                 ):
                     filtered.append(value)
             values = filtered
-        if limit is None and continue_token is None:
-            return values
         start = 0
         if continue_token:
             try:
                 start = int(continue_token)
             except ValueError as exc:
                 raise InvalidRequest("invalid continue token") from exc
-        if limit is None or limit <= 0:
+        if start < 0 or start > len(values):
+            raise InvalidRequest("invalid continue token")
+        if limit is not None and limit <= 0:
             raise InvalidRequest("limit must be positive")
-        page = values[start : start + limit]
-        next_token = (
-            str(start + limit) if start + limit < len(values) else None
-        )
+        end = len(values) if limit is None else start + limit
+        page = values[start:end]
+        next_token = str(end) if end < len(values) else None
         return page, next_token
 
     def watch(
