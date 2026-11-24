@@ -502,6 +502,22 @@ def test_100_watchers_and_bounded_410(tmp_path: Path):
         assert exc.value.code == 410
 
 
+
+def test_watch_1000_writes_no_loss_or_duplicates(tmp_path: Path):
+    with Store(tmp_path / "store", commit_window=0.002) as store:
+        watcher = store.watch(0, timeout=15.0)
+        for index in range(1000):
+            store.put(
+                f"epishu/e{index}",
+                {"spec": {"n": index}},
+                expected_rev=0,
+            )
+        events = list(watcher)
+    assert len(events) == 1000
+    assert len({(event["rev"], event["seq"]) for event in events}) == 1000
+    assert [event["rev"] for event in events] == list(range(1, 1001))
+
+
 def test_anchor_truncation_fails(tmp_path: Path):
     path = tmp_path / "store"
     store = Store(path)
