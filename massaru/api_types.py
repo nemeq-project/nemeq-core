@@ -233,6 +233,30 @@ class Model(APIObject):
 
 
 @dataclass
+class LeaseSpec:
+    holder: str = ""
+    duration_seconds: int = 15
+    renew_time: str = ""
+
+
+@dataclass
+class LeaseStatus:
+    holder: str = ""
+    renew_time: str = ""
+    lease_duration_seconds: int = 0
+
+
+@dataclass
+class Lease(APIObject):
+    kind: ClassVar[str] = "Lease"
+    name: str
+    spec: LeaseSpec
+    status: LeaseStatus = field(default_factory=LeaseStatus)
+    resource_version: int = 0
+    uid: str = ""
+
+
+@dataclass
 class EffectSpec:
     sink_class: str
     payload_hash: str
