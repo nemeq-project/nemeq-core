@@ -23,11 +23,12 @@ def run(*args: str, timeout: float = 30.0) -> subprocess.CompletedProcess[str]:
     )
 
 
-def make_store(path: Path) -> None:
-    with Store(path) as store:
+def make_store(path: Path, sink: Path | None = None) -> None:
+    with Store(path, anchor_sink=sink) as store:
         store.put("epishu/e1", {"spec": {"n": 1}}, expected_rev=0)
         store.put("epishu/e2", {"spec": {"n": 2}}, expected_rev=0)
         store.snapshot()
+        store.anchor()
 
 
 def test_nqctl_verify_and_snapshot(tmp_path: Path):
@@ -87,3 +88,16 @@ def test_nqctl_missing_store_is_empty_ok(tmp_path: Path):
     result = run("--store", str(tmp_path / "missing"), "store", "verify")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["rev"] == 0
+
+
+def test_nqctl_fsck_remote_watermark(tmp_path: Path):
+    path = tmp_path / "store"
+    sink = tmp_path / "sink"
+    make_store(path, sink=sink)
+    result = run(
+        "--store", str(path), "store", "verify", "--remote", str(sink)
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["ok"] is True
+    assert report["anchorRev"] == 2

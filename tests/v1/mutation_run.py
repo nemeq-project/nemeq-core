@@ -159,23 +159,21 @@ MUTANTS: list[dict[str, str]] = [
         "name": "store_does_not_update_meta",
         "file": "massaru/store.py",
         "test": "test_restart_and_meta",
-        "old": """            self._maybe_anchor(rev, last_hash)
-            self._write_meta()""",
-        "new": """            self._maybe_anchor(rev, last_hash)""",
+        "old": """                self._write_meta()
+                self._materialize(keys, state)
+                self._maybe_anchor(rev, last_hash)""",
+        "new": """                self._materialize(keys, state)
+                self._maybe_anchor(rev, last_hash)""",
     },
     {
         "id": "M14",
         "name": "store_skips_anchor_check",
         "file": "massaru/store.py",
         "test": "test_anchor_truncation_fails",
-        "old": """                    if report.rev < anchor_rev:
-                        report.errors.append(
-                            "journal truncated below anchor"
-                        )""",
+        "old": """                    if anchor_rev > report.rev:
+                        raise StoreCorrupt("journal truncated below anchor")""",
         "new": """                    if False:
-                        report.errors.append(
-                            "journal truncated below anchor"
-                        )""",
+                        raise StoreCorrupt("journal truncated below anchor")""",
     },
     {
         "id": "M15",
@@ -207,6 +205,15 @@ MUTANTS: list[dict[str, str]] = [
         "new": """            with segment.open("r+b") as handle:
                 handle.flush()""",
     },
+    {
+        "id": "M18",
+        "name": "store_ignores_uncommitted_batch",
+        "file": "massaru/store.py",
+        "test": "test_uncommitted_batch_is_truncated_on_start",
+        "old": """    if not report.errors and pending:""",
+        "new": """    if False and not report.errors and pending:""",
+    },
+
 ]
 
 
