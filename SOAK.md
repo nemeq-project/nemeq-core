@@ -51,3 +51,25 @@ it is not blessed here.
 Histograms are emitted in the JSON output (`writeHistogram`,
 `readHistogram`, `fsyncHistogram`); raw files: `/tmp/soakA2_ext4.json`,
 `/tmp/soakB2_ext4.json` (local run artifacts).
+
+## Histograms (ms buckets, counts)
+
+Profile A (9600 writes, 2400 reads, 8107 fsyncs):
+
+| bucket | write | read | fsync |
+|---|---:|---:|---:|
+| ≤50 | 23 | 2400 | 5207 |
+| ≤100 | 5086 | 2400 | 8029 |
+| ≤250 | 9596 | 2400 | 8107 |
+| ≤1000 | 9600 | 2400 | 8107 |
+| >1000 | 0 | 0 | 0 |
+
+Profile B (24000 writes, 6000 reads, 6548 fsyncs):
+
+| bucket | write | read | fsync |
+|---|---:|---:|---:|
+| ≤50 | 86 | 5666 | 4276 |
+| ≤100 | 5026 | 5977 | 6448 |
+| ≤250 | 22622 | 6000 | 6547 |
+| ≤1000 | 24000 | 6000 | 6548 |
+| >1000 | 0 | 0 | 0 |
