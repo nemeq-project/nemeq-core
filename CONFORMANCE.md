@@ -119,3 +119,21 @@ last inspected event (including other resources and scope-filtered events).
 Empty backlog returns `nextRev == fromRev`. Same-`rev` groups are never split
 by `limit`. Covered by `tests/p0/test_watch_page.py`; mutants `P27`, `P28`,
 `P29`.
+
+### 6.4 Deferred blockers (not implemented, not silently added)
+
+| Blocker | Why deferred | What it would require |
+|---|---|---|
+| Opaque signed resume token (`watch`) | Contract v1 uses numeric `fromRev` + `metadata.nextRev`; a token needs a key, rotation and a client contract | New API field, secret management, migration of `nqctl` |
+| Retention TTL / journal compaction | `Store` keeps the full journal; there is no deletion path, so an age cutoff would be arbitrary and unverifiable | Compaction design, anchor interaction, restore-drill changes |
+
+Until these land, the **only** `410` is `WatchGone` (buffer overflow, replay
+impossible), and expired-cursor semantics must not be claimed in docs or tests.
+
+### 6.5 Port binding contract
+
+`make_server(port=None)` → `DEFAULT_PORT` (8448); `make_server(port=0)` → an
+ephemeral port (tests must never bind 8448 or collide with a parallel run).
+`serve(port=None)` → `port_from_env()`. Verified by
+`tests/p0/test_server.py::test_make_server_binds_ephemeral_port` and mutant
+`P33`.

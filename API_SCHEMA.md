@@ -40,9 +40,17 @@ clients see the HTTP semantics below, never JSONL files.
 - **`410 Expired`** is returned in exactly one confirmed case in v1: a
   `watch` subscriber whose buffer overflowed (`WatchGone`). The stream is
   closed and the client must relist. `409` is never returned for that case.
+  Rationale: overflowing the bounded buffer **drops events**, so the server
+  can no longer prove the client's `fromRev` window is complete - replay is
+  impossible, not merely old. This is not an age/TTL cutoff: the Store keeps
+  the full journal (no retention/compaction in v1), so any `fromRev` below
+  `head` is still replayable as long as the subscriber buffer holds.
 - `continue` tokens are plain offsets into the already-filtered list; an
-  invalid token is `400 BadRequest`, not `410`. There is no TTL or HMAC
-  cursor in v1.
+  invalid token is `400 BadRequest`, not `410`. There is no TTL, no HMAC
+  cursor and no cursor secret in v1.
+- **Deferred (not in v1):** an opaque signed resume token or a retention TTL
+  would require a contract change and a Store compaction story; tracked as a
+  separate blocker in `CONFORMANCE.md` §6.4, not implemented silently.
 - Objects carry `generation` (spec changes); controllers write
   `status.observedGeneration` after observing that generation.
 

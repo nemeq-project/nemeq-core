@@ -36,7 +36,7 @@ class Api:
         return RESOURCES[plural]
 
     def current_rev(self) -> int:
-        """Current journal revision (head) for cursor expiry checks."""
+        """Current journal head revision (informational; no TTL cursor in v1)."""
         state = getattr(self.store, "_rev", 0)
         return int(state) if isinstance(state, int) else 0
 
