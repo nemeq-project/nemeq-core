@@ -156,12 +156,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class Server(ThreadingHTTPServer):
+    """HTTP-сервер с привязанным OpenAPI-документом."""
     daemon_threads: bool = True
     openapi: dict = {}
 
 
-def make_server(api: Api, host: str = "127.0.0.1",
-                port: int | None = None, openapi: dict | None = None) -> Server:
+def make_server(api: Api, host: str = "127.0.0.1", port: int | None = None,
+                openapi: dict | None = None) -> Server:
+    """Создать сервер; port=None -> DEFAULT_PORT, port=0 -> эфемерный порт."""
     p = DEFAULT_PORT if port is None else port
     srv = Server((host, p), Handler)
     srv.openapi = openapi or {}
@@ -172,6 +174,7 @@ def make_server(api: Api, host: str = "127.0.0.1",
 
 def serve(api: Api, host: str | None = None, port: int | None = None,
           openapi: dict | None = None) -> None:
+    """Запустить блокирующий сервер на host/port (или NEMEQ_API_HOST/port_from_env)."""
     h = host or os.environ.get("NEMEQ_API_HOST", "127.0.0.1")
     p = port_from_env() if port is None else port
     srv = make_server(api, host=h, port=p, openapi=openapi)

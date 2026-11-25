@@ -1,12 +1,12 @@
 import pytest
-from apiserver.rbac import (
-    ROLE_POWER,
-    STATUS_ROLES,
-    VERBS,
-    authorize,
-    grant_allows,
-    grant_verb_allows,
-)
+from apiserver.rbac import ROLE_POWER, STATUS_ROLES, VERBS, authorize, grant_allows, grant_verb_allows
+
+
+def grant_for(role, verbs=None, scope="*"):
+    spec = {"role": role, "scope": scope}
+    if verbs is not None:
+        spec["verbs"] = verbs
+    return {"spec": spec}
 
 
 def g(subject, role, verbs=None, scope="*"):
@@ -55,26 +55,18 @@ def test_effective_verbs_is_single_source():
                 assert via_authorize == via_grant, (role, verbs_spec, verb)
 
 
-def grant_for(role, verbs=None, scope="*"):
-    spec = {"role": role, "scope": scope}
-    if verbs is not None:
-        spec["verbs"] = verbs
-    return {"spec": spec}
-
-
 def test_admin_wildcard_and_power_ordering():
     admin_star = grant_for("admin", ["*"])
     for verb in ("delete", "status", "create", "update", "get", "list", "watch"):
         assert grant_allows(admin_star, verb, "cluster") is True
-    # A viewer '*' is still capped by the viewer ceiling.
-    viewer_star = grant_for("viewer", ["*"])
-    for verb in ("delete", "create", "update", "status"):
-        assert grant_allows(viewer_star, verb, "cluster") is False
     admin_get = grant_for("admin", ["get"])
     assert grant_allows(admin_get, "get", "cluster") is True
     for verb in ("delete", "status", "create"):
         assert grant_allows(admin_get, verb, "cluster") is False
-    assert grant_verb_allows(grant_for("admin", ["*"]), "delete") is True
+    assert grant_verb_allows(admin_star, "delete") is True
     assert ROLE_POWER["admin"] > ROLE_POWER["admin_epishu"] > ROLE_POWER["ops"] > ROLE_POWER["viewer"]
     assert "status" not in VERBS["viewer"]
     assert STATUS_ROLES == frozenset({"ops", "admin_epishu", "admin"})
+    viewer_star = grant_for("viewer", ["*"])
+    for verb in ("delete", "create", "update", "status"):
+        assert grant_allows(viewer_star, verb, "cluster") is False

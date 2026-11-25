@@ -62,11 +62,9 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
 
 
 def _remote(args: argparse.Namespace) -> int:
+    """Выполнить команду через HTTP API (get/describe/apply/watch/health)."""
     config = load_config()
-    client = Client(
-        resolve_url(args.api_url, config),
-        resolve_actor(args.actor, config),
-    )
+    client = Client(resolve_url(args.api_url, config), resolve_actor(args.actor, config))
     action = args.action
     if action == "health":
         code, out = commands.cmd_health(client)
@@ -82,9 +80,7 @@ def _remote(args: argparse.Namespace) -> int:
             return 1
         code, out = commands.cmd_apply(client, manifest)
     elif action == "watch":
-        code, out = commands.cmd_watch(
-            client, args.kind, from_rev=args.from_rev, limit=args.limit
-        )
+        code, out = commands.cmd_watch(client, args.kind, from_rev=args.from_rev, limit=args.limit)
     else:
         print(json.dumps({"title": "Invalid", "detail": "unknown action"}))
         return 2
@@ -94,6 +90,7 @@ def _remote(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
     if getattr(args, "remote_api", False):
         return _remote(args)
@@ -105,14 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         rev = store_fsck.snapshot(path)
         print(json.dumps({"snapshotRev": rev}))
         return 0
-    report = (
-        store_fsck.fsck(path, repair=args.repair, remote=args.remote)
-        if args.action == "fsck"
-        else store_fsck.verify(path, remote=args.remote)
-    )
+    if args.action == "fsck":
+        report = store_fsck.fsck(path, repair=args.repair, remote=args.remote)
+    else:
+        report = store_fsck.verify(path, remote=args.remote)
     print(json.dumps(report.to_dict(), ensure_ascii=False))
     return 0 if report.ok else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

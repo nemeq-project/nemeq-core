@@ -1,10 +1,3 @@
-"""Watch page builder working on the GLOBAL ordered event stream.
-
-The helper walks every event it looks at - including other resources and
-events filtered out by scope - so ``metadata.nextRev`` is a global progress
-watermark.  ``items`` only contains this resource's visible objects.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -14,43 +7,34 @@ from .envelope import to_envelope
 
 
 def event_object(kind: str, event: dict) -> dict | None:
-    """Outward object: DELETED is always null (the previous value stays internal)."""
+    """Конвертирует событие в envelope. DELETED → None, value=None → None."""
     if event.get("type") == "DELETED":
         return None
     value = event.get("value")
-    return to_envelope(kind, value) if value else None
+    if value is None:
+        return None
+    return to_envelope(kind, value)
 
 
 def event_scope(event: dict) -> tuple[str, dict[str, Any]]:
-    """Name/spec used for scope authz; DELETED uses the internal previous value."""
+    """Извлекает name/spec из события. DELETED value — предыдущий объект для scope."""
     key = event.get("key", "")
     fallback = key.rsplit("/", 1)[-1] if "/" in key else key
     value = event.get("value")
     if isinstance(value, dict):
         name = value.get("name") or fallback
-        spec = value.get("spec")
-        return str(name), (spec if isinstance(spec, dict) else {})
+        spec = value.get("spec") if isinstance(value.get("spec"), dict) else {}
+        return str(name), spec
     return fallback, {}
 
 
-def page_events(
-    kind: str,
-    plural: str,
-    events: list[dict],
-    *,
-    from_rev: int,
-    limit: int,
-    grants: list[dict],
-    actor: str,
-) -> dict:
-    """Return one watch page from the global stream.
-
-    Invariants:
-    * ``nextRev`` advances on every event actually inspected, including other
-      resources and scope-filtered ones.
-    * ``items`` only holds this resource (plural prefix) and visible scopes.
-    * A rev group (same ``rev``, several ``seq``) is never split by ``limit``;
-      an oversized group is returned whole.
+def page_events(kind: str, plural: str, events: list[dict], *, from_rev: int, limit: int,
+                grants: list[dict], actor: str) -> dict:
+    """
+    Инварианты:
+      * nextRev двигается по КАЖДОМУ просмотренному событию, включая чужие plural и отфильтрованные по scope.
+      * items содержит только свой plural и только видимые scope.
+      * Одна rev-группа не разрезается лимитом: просмотренные события считаются отданными целиком.
     """
     prefix = plural + "/"
     items: list[dict] = []
@@ -65,21 +49,13 @@ def page_events(
         group_end = index
         while group_end < total and int(events[group_end].get("rev", 0)) == rev:
             group_end += 1
-        group = [
-            event for event in events[index:group_end]
-            if str(event.get("key", "")).startswith(prefix)
-        ]
+        group = [e for e in events[index:group_end] if str(e.get("key", "")).startswith(prefix)]
         eligible: list[dict] = []
-        for event in group:
-            name, spec = event_scope(event)
+        for e in group:
+            name, spec = event_scope(e)
             if visible(grants, "watch", kind, name, spec, actor):
-                eligible.append(
-                    {
-                        "type": event.get("type"),
-                        "rev": rev,
-                        "object": event_object(kind, event),
-                    }
-                )
+                eligible.append({"type": e.get("type"), "rev": rev,
+                                 "object": event_object(kind, e)})
         if items and len(items) + len(eligible) > limit:
             break
         next_rev = rev
@@ -87,11 +63,10 @@ def page_events(
         items.extend(eligible)
         if len(items) >= limit:
             break
-    return {
-        "items": items,
-        "metadata": {"nextRev": next_rev, "fromRev": int(from_rev), "limit": limit},
-    }
+    return {"items": items,
+            "metadata": {"nextRev": next_rev, "fromRev": int(from_rev), "limit": limit}}
 
 
 def next_rev_of(page: dict) -> int:
+    """Возвратить глобальную ревизию последнего просмотренного события в странице."""
     return int(page["metadata"]["nextRev"])

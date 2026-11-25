@@ -1,5 +1,5 @@
 import pytest
-from apiserver.envelope import to_envelope, from_envelope, to_list, API_VERSION
+from apiserver.envelope import API_VERSION, from_envelope, to_envelope, to_list
 
 
 def test_to_envelope_shape():
@@ -15,7 +15,6 @@ def test_to_envelope_shape():
 
 def test_to_envelope_missing_fields():
     env = to_envelope("Zi", {})
-    assert env["status"] == {}
     assert env["metadata"]["name"] == ""
     assert env["metadata"]["generation"] == 0
     assert env["status"] == {}
