@@ -9,7 +9,7 @@ be commands + exit codes, not claims.
 ```sh
 python3 -m pytest -rA
 python3 -m pytest --cov=kernel.libbu --cov=agents --cov=massaru --cov=nqctl \
-  --cov-fail-under=70 -q
+  --cov=apiserver --cov-fail-under=70 -q
 python3 tools/lint.py
 python3 kernel/mutation_run.py
 python3 agents/tests/mutation_run.py
@@ -66,7 +66,7 @@ watch 410, limits, fail-stop, uncommitted batch).
 ```sh
 python3 -m pytest tests/p0 -q
 python3 tools/mutation_p0.py     # 37/37
-python3 -m pytest tests/v1/test_one_million_replay.py -m slow -q -s   # 1M replay/fsck
+python3 -m pytest tests/v1/test_one_million_replay.py -m slow -q -rA -s -p no:cacheprovider
 ```
 
 Required: admission chain (validation → defaults → RBAC → quota → v1 read-only
@@ -140,6 +140,18 @@ ephemeral port (tests must never bind 8448 or collide with a parallel run).
 `P33`.
 
 ### 6.6 1M replay/fsck acceptance (measured 2026-11-25)
+
+**Covered by a dedicated CI job.** `.gitea/workflows/ci.yml` defines
+`slow-acceptance` (`timeout-minutes: 30`) which runs the test explicitly:
+
+```sh
+python -m pytest tests/v1/test_one_million_replay.py -m slow -q -rA -s -p no:cacheprovider
+```
+
+The main `test` job keeps `addopts = -m 'not slow'`; the explicit `-m slow`
+in this job overrides the default selection so the test really executes.
+Timing budget: **journal generation ~35 s + replay/fsck <= 120 s** (asserted
+inside the test; the 60 s figure in §8 is the target, not the gate).
 
 `tests/v1/test_one_million_replay.py` (marked `slow`, excluded from the default
 run via `addopts = -m 'not slow'`) builds a real 1 000 000-revision journal and
