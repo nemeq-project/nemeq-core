@@ -43,5 +43,5 @@ jobs:
       - name: V1 skeleton mutants (18/18)
         run: python tests/v1/mutation_run.py
 
-      - name: P0 apiserver mutants (33/33)
+      - name: P0 apiserver mutants (37/37)
         run: python tools/mutation_p0.py

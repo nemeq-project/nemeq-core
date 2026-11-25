@@ -65,7 +65,8 @@ watch 410, limits, fail-stop, uncommitted batch).
 
 ```sh
 python3 -m pytest tests/p0 -q
-python3 tools/mutation_p0.py     # 33/33
+python3 tools/mutation_p0.py     # 37/37
+python3 -m pytest tests/v1/test_one_million_replay.py -m slow -q -s   # 1M replay/fsck
 ```
 
 Required: admission chain (validation → defaults → RBAC → quota → v1 read-only
@@ -137,3 +138,39 @@ ephemeral port (tests must never bind 8448 or collide with a parallel run).
 `serve(port=None)` → `port_from_env()`. Verified by
 `tests/p0/test_server.py::test_make_server_binds_ephemeral_port` and mutant
 `P33`.
+
+### 6.6 1M replay/fsck acceptance (measured 2026-11-25)
+
+`tests/v1/test_one_million_replay.py` (marked `slow`, excluded from the default
+run via `addopts = -m 'not slow'`) builds a real 1 000 000-revision journal and
+runs replay + fsck over it:
+
+```
+python3 -m pytest tests/v1/test_one_million_replay.py -m slow -q -s
+1M replay 68.6s, seed 34.6s
+1 passed                                                        rc=0
+```
+
+Result: `ok=true`, `transactions=1_000_000`, `state objects=1_000_000`,
+`last_hash` chained, journal 755 MB, replay 67.7-68.6 s (SLO: <=60 s target,
+<=120 s gate). Status: **passes the 120 s gate, above the 60 s target** —
+recorded honestly, no threshold tuning.
+
+### 6.7 CI gate status (blocker, not cosmetic)
+
+All PR #20 commits (`bdefa67`, `748e841`, `c1b2de6`, `df87525`, `23866d0`)
+carry `ci / test (push)` and `ci / test (pull_request)` statuses stuck in
+`pending — Waiting to run`; Gitea shows **30 queued runs, 0 executed** on
+192.168.96.51 because no `act_runner` is registered (issue #16 item 7).
+
+Consequence: the workflow in `.gitea/workflows/ci.yml` has never actually run.
+Local numbers (pytest/coverage/lint/4 mutation suites) are the only evidence
+so far. This is an **acceptance blocker**, tracked here until a runner is
+registered and head shows green statuses.
+
+### 6.8 SLO soak status (outside SLO)
+
+`SOAK.md` records both A/B profiles **failing** their write-latency gates
+(A writeP99 158.9-193.3 ms vs 150; writeP95 117.6-161.0 ms vs 100).
+The soak is **not** a passed gate; it is listed as an open blocker pending
+retuning (rps/window) and re-measurement on the target disk.

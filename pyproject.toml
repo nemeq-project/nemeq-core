@@ -20,4 +20,7 @@ yaml = ["pyyaml>=6"]
 
 [tool.pytest.ini_options]
 testpaths = ["kernel", "agents", "tests"]
-addopts = "-q"
+addopts = "-q -m 'not slow'"
+markers = [
+  "slow: long acceptance runs (1M revisions, measured replay/fsck)",
+]
