@@ -21,10 +21,25 @@ def _method_get_collection(kind: str) -> dict[str, Any]:
             {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1}},
             {"name": "continue", "in": "query", "schema": {"type": "string"}},
             {"name": "watch", "in": "query", "schema": {"type": "boolean"}},
-            {"name": "from_rev", "in": "query", "schema": {"type": "integer", "minimum": 0}},
+            {"name": "fromRev", "in": "query", "schema": {"type": "integer", "minimum": 0}},
+            {"name": "from_rev", "in": "query",
+             "schema": {"type": "integer", "minimum": 0},
+             "description": "snake_case alias of fromRev (same value)"},
         ],
         "responses": {
-            "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object"}}}},
+            "200": {
+                "description": "OK",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "oneOf": [
+                                {"$ref": "#/components/schemas/List"},
+                                {"$ref": "#/components/schemas/WatchPage"},
+                            ]
+                        }
+                    }
+                },
+            },
             **ERROR_RESPONSES,
         },
     }
@@ -130,6 +145,54 @@ def build_openapi() -> dict[str, Any]:
                     "properties": {"apiVersion": {"type": "string"}, "kind": {"type": "string"},
                                    "metadata": {"$ref": "#/components/schemas/ObjectMeta"},
                                    "spec": {"type": "object"}, "status": {"type": "object"}},
+                },
+                "List": {
+                    "type": "object",
+                    "required": ["apiVersion", "kind", "metadata", "items"],
+                    "properties": {
+                        "apiVersion": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "metadata": {"type": "object",
+                                     "properties": {"continue": {"type": "string"}}},
+                        "items": {"type": "array",
+                                  "items": {"$ref": "#/components/schemas/Envelope"}},
+                    },
+                },
+                "WatchPage": {
+                    "type": "object",
+                    "required": ["items", "metadata"],
+                    "properties": {
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["type", "rev", "object"],
+                                "properties": {
+                                    "type": {"type": "string",
+                                             "enum": ["ADDED", "MODIFIED", "DELETED"]},
+                                    "rev": {"type": "integer"},
+                                    "object": {
+                                        "nullable": True,
+                                        "allOf": [
+                                            {"$ref": "#/components/schemas/Envelope"}
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                        "metadata": {
+                            "type": "object",
+                            "required": ["nextRev", "fromRev", "limit"],
+                            "properties": {
+                                "nextRev": {
+                                    "type": "integer",
+                                    "description": "global rev of the last inspected event",
+                                },
+                                "fromRev": {"type": "integer"},
+                                "limit": {"type": "integer"},
+                            },
+                        },
+                    },
                 },
             },
         },

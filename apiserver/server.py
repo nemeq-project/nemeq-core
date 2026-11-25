@@ -114,14 +114,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_problem(problem(503, "no api bound", "Unavailable"))
         try:
             if verb == "get":
-                result = api.get(route.plural, route.name)
+                result = api.get(route.plural, route.name, actor=actor)
             elif verb == "list":
-                result = api.list(route.plural, limit=route.limit,
-                                  continue_token=route.continue_token)
+                result = api.list(
+                    route.plural,
+                    limit=route.limit,
+                    continue_token=route.continue_token,
+                    actor=actor,
+                )
             elif verb == "watch":
-                evts = api.watch(route.plural, from_rev=route.from_rev,
-                                 limit=route.limit or 100)
-                return self._send_json(200, {"items": evts})
+                payload = api.watch_page(
+                    route.plural,
+                    from_rev=route.from_rev,
+                    limit=route.limit or 100,
+                    actor=actor,
+                )
+                if self.metrics is not None:
+                    self.metrics.inc("nq_api_requests_total")
+                return self._send_json(200, payload)
             elif verb == "create":
                 result = api.create(route.plural, body, actor=actor)
             elif verb == "update":
@@ -152,7 +162,7 @@ class Server(ThreadingHTTPServer):
 
 def make_server(api: Api, host: str = "127.0.0.1",
                 port: int | None = None, openapi: dict | None = None) -> Server:
-    p = port or DEFAULT_PORT
+    p = DEFAULT_PORT if port is None else port
     srv = Server((host, p), Handler)
     srv.openapi = openapi or {}
     Handler.api = api
@@ -163,7 +173,7 @@ def make_server(api: Api, host: str = "127.0.0.1",
 def serve(api: Api, host: str | None = None, port: int | None = None,
           openapi: dict | None = None) -> None:
     h = host or os.environ.get("NEMEQ_API_HOST", "127.0.0.1")
-    p = port or port_from_env()
+    p = port_from_env() if port is None else port
     srv = make_server(api, host=h, port=p, openapi=openapi)
     print(f"listening on http://{h}:{p}", flush=True)
     srv.serve_forever()

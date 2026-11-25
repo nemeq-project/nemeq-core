@@ -51,8 +51,11 @@ def parse_query(query: dict[str, list[str]]) -> dict[str, Any]:
     if "watch" in query:
         vals = query["watch"]
         result["watch"] = bool(vals) and any(v in ("1", "true", "") for v in vals)
-    if "from_rev" in query:
-        raw = query["from_rev"][0] if query["from_rev"] else ""
+    if "from_rev" in query and "fromRev" in query:
+        raise Problem(400, "BadRequest", "use fromRev or from_rev, not both")
+    from_key = "fromRev" if "fromRev" in query else "from_rev"
+    if from_key in query:
+        raw = query[from_key][0] if query[from_key] else ""
         try:
             v = int(raw)
             if v < 0:

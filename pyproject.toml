@@ -16,6 +16,7 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov>=5"]
+yaml = ["pyyaml>=6"]
 
 [tool.pytest.ini_options]
 testpaths = ["kernel", "agents", "tests"]

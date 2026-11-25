@@ -32,12 +32,17 @@ def test_make_server_binds_ephemeral_port(tmp_path):
     admin = {"name": "admin", "spec": {"subject": "root", "role": "admin", "scope": "*", "verbs": ["*"]}}
     store.put("grants/admin", admin, expected_rev=0)
     api = Api(store, lambda: store.list("grants/")[0])
-    srv = make_server(api, port=0, openapi=build_openapi())
+    first = make_server(api, port=0, openapi=build_openapi())
+    second = make_server(api, port=0, openapi=build_openapi())
     try:
-        assert srv.server_address[1] > 0
-        assert srv.openapi["openapi"] == "3.0.3"
+        assert first.openapi["openapi"] == "3.0.3"
+        # port=0 must be an ephemeral bind, never the default port.
+        assert first.server_address[1] > 0
+        assert first.server_address[1] != DEFAULT_PORT
+        assert first.server_address[1] != second.server_address[1]
     finally:
-        srv.server_close()
+        first.server_close()
+        second.server_close()
         store.close()
 
 
@@ -48,20 +53,21 @@ def test_handlers_list_pagination(tmp_path):
     api = Api(store, lambda: store.list("grants/")[0])
     for i in range(3):
         api.create("zis", {"name": f"z{i}", "spec": {"image": "i", "digest": "d"}}, actor="root")
-    page = api.list("zis", limit=2)
+    page = api.list("zis", limit=2, actor="root")
     assert page["kind"] == "ZiList" and len(page["items"]) == 2
     token = page["metadata"]["continue"]
     assert token
-    page2 = api.list("zis", limit=2, continue_token=token)
+    page2 = api.list("zis", limit=2, continue_token=token, actor="root")
     assert len(page2["items"]) == 1
     store.close()
 
 
 def test_handlers_get_missing_raises_404(tmp_path):
     store = Store(tmp_path / "store3")
-    api = Api(store, lambda: [])
+    admin = {"name": "admin", "spec": {"subject": "root", "role": "admin", "scope": "*", "verbs": ["*"]}}
+    api = Api(store, lambda: [admin])
     try:
-        api.get("zis", "absent")
+        api.get("zis", "absent", actor="root")
     except Problem as exc:
         assert exc.status == 404 and exc.reason == "NotFound"
     else:

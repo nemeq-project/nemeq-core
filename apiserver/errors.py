@@ -75,12 +75,13 @@ def problem(
 
 def from_store_error(exc: BaseException) -> Problem:
     cls_name = type(exc).__name__
-    mapped_status = _STORE_MAP.get(cls_name, 500)
-
-    if hasattr(exc, "code"):
-        code = exc.code  # type: ignore[attr-defined]
-        if isinstance(code, int) and code in REASONS:
-            mapped_status = code
+    # The explicit map is the single source of truth for the HTTP status of
+    # known store errors; anything else is a 500. Do not trust exc.code here:
+    # that would make the contract untestable and silently override the map.
+    mapped_status = _STORE_MAP.get(cls_name)
+    if mapped_status is None:
+        code = getattr(exc, "code", None)
+        mapped_status = code if isinstance(code, int) and code in REASONS else 500
 
     if cls_name in _DETAIL_EXC:
         detail = str(exc)

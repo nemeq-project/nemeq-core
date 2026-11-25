@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".venv", "run"}
 LOCAL_PACKAGES = {"kernel", "agents", "massaru", "nqctl", "apiserver", "tests", "tools"}
 DEV_ALLOWED = {"pytest"}
+# Optional runtime dependency: YAML manifests in nqctl apply.
+OPTIONAL_DEPENDENCIES = {"yaml"}
 RUNTIME_DEPENDENCIES = {"cryptography"}
 
 
@@ -70,6 +72,7 @@ def main() -> int:
         | LOCAL_PACKAGES
         | DEV_ALLOWED
         | RUNTIME_DEPENDENCIES
+        | OPTIONAL_DEPENDENCIES
         | {"__future__"}
     )
     files = iter_python_files()

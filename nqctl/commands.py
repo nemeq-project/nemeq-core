@@ -4,6 +4,7 @@ import json
 from typing import Any, Tuple
 
 from .client import Client, ApiError
+from .manifest import ManifestError, load_manifest
 
 PLURAL: dict[str, str] = {
     "zi": "zis", "su": "sus", "epishu": "epishus",
@@ -19,10 +20,18 @@ _KIND_MAP: dict[str, str] = {
 
 
 def plural_of(kind: str) -> str:
-    if kind in PLURAL:
-        return PLURAL[kind]
-    if kind in _KIND_MAP:
-        return kind
+    if not isinstance(kind, str):
+        raise ValueError(f"unknown kind: {kind!r}")
+    key = kind.strip()
+    if key in PLURAL:
+        return PLURAL[key]
+    if key in _KIND_MAP:
+        return key
+    lowered = key.lower()
+    if lowered in PLURAL:
+        return PLURAL[lowered]
+    if lowered in _KIND_MAP:
+        return lowered
     raise ValueError(f"unknown kind: {kind!r}")
 
 
@@ -81,9 +90,9 @@ def cmd_describe(client: Client, kind: str, name: str) -> Tuple[int, str]:
 
 def cmd_apply(client: Client, manifest: str) -> Tuple[int, str]:
     try:
-        body = json.loads(manifest)
-    except ValueError as exc:
-        return 400, json.dumps({"title": "Invalid", "detail": str(exc)}, sort_keys=True)
+        body = load_manifest(manifest)
+    except ManifestError as exc:
+        return 400, json.dumps({"title": "Invalid", "detail": exc.detail}, sort_keys=True)
     if not isinstance(body, dict):
         return 400, json.dumps({"title": "Invalid", "detail": "manifest must be object"}, sort_keys=True)
     kind = body.get("kind", "")

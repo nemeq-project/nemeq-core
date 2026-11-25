@@ -65,11 +65,57 @@ watch 410, limits, fail-stop, uncommitted batch).
 
 ```sh
 python3 -m pytest tests/p0 -q
-python3 tools/mutation_p0.py     # 14/14
+python3 tools/mutation_p0.py     # 33/33
 ```
 
 Required: admission chain (validation → defaults → RBAC → quota → v1 read-only
-deny with AUDIT_DENY advancing rev), CAS 409/410, `/status` subresource limited
-to `epishus|sessions|quotas`, watch filtered per resource, RFC 7807 problem
-bodies, `nqctl apply/get/describe/watch` over HTTP while local
-`nqctl store fsck|verify|snapshot` keeps working.
+deny with AUDIT_DENY advancing rev), `/status` subresource limited to
+`epishus|sessions|quotas`, RFC 7807 problem bodies, `nqctl apply/get/describe/watch`
+over HTTP while local `nqctl store fsck|verify|snapshot` keeps working.
+
+### 6.1 Status code contract (normative)
+
+| Situation | Code |
+|---|---|
+| CAS `resourceVersion` mismatch (stale or bogus token) | `409 Conflict` (never 410) |
+| Another writer holds the store lock (`StoreBusy`) | `409 Conflict` |
+| Watch subscriber buffer overflow (`WatchGone`) | `410 Expired` (relist) |
+| Missing/empty actor, or actor without a covering Grant | `403 Forbidden` + `AUDIT_DENY` |
+| Body > 2 MiB / value > 1 MiB | `413 TooLarge` |
+| Schema-invalid spec | `422 Invalid` |
+
+CAS `resourceVersion` mismatch → `409`, never `410`. `StoreBusy` (another
+writer holds `flock`) also → `409`. The only confirmed `410` is `WatchGone`
+(buffer overflow), never `409` for it. Covered by
+`tests/p0/test_routes_watch.py::test_watch_overflow_returns_410`,
+`tests/p0/test_api_cas.py`, and mutant `P34` (`WatchGone` mapped to 409).
+
+### 6.2 RBAC matrix (normative)
+
+| Operation | Verb | Where enforced |
+|---|---|---|
+| `GET /{plural}` | `list` (verb gate, then per item scope filter) | collection + item |
+| `GET /{plural}/{name}` | `get` | object scope |
+| `POST /{plural}` | `create` + admission | object scope |
+| `PUT /{plural}/{name}` | `update` | object scope |
+| `PUT /{plural}/{name}/status` | **`status`** (not `update`) | object scope |
+| `DELETE /{plural}/{name}` | `delete` | object scope |
+| `GET ?watch=1` | `watch` (verb gate, then per event scope filter) | collection + event |
+
+An empty actor is denied before any object lookup. An actor holding only
+`get` is denied `list`/`watch` with `403`. Role verbs are a ceiling: a
+non-empty `spec.verbs` narrows it and cannot escalate (`viewer` + `delete`
+is still denied); `status` is granted only to `ops`/`admin_epishu`/`admin`
+and only explicitly. Denied reads outside scope write an `AUDIT_DENY` with a
+**redacted** name.
+
+Covered by `tests/p0/test_authz.py`, `tests/p0/test_collection_gate.py`,
+`tests/p0/test_rbac_ceiling.py`, `tests/p0/test_admission_escalation.py`.
+
+### 6.3 Watch watermark
+
+`GET ?watch=1&fromRev=N` returns `metadata.nextRev`, the global `rev` of the
+last inspected event (including other resources and scope-filtered events).
+Empty backlog returns `nextRev == fromRev`. Same-`rev` groups are never split
+by `limit`. Covered by `tests/p0/test_watch_page.py`; mutants `P27`, `P28`,
+`P29`.
