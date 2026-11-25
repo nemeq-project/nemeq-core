@@ -150,6 +150,18 @@ MUTANTS: list[tuple[str, str, str, str, str, str]] = [
     ("P33", "server_port_zero_falls_back", "apiserver/server.py",
      "tests/p0/test_server.py::test_make_server_binds_ephemeral_port",
      "    p = DEFAULT_PORT if port is None else port", "    p = port or DEFAULT_PORT"),
+    ("P38", "list_pagination_before_scope_filter", "apiserver/pagination.py",
+     "tests/p0/test_rbac_pagination_watch.py::test_scoped_pagination_skips_hidden_between_pages",
+     '    visible_items = filter_items(grants, kind, items, actor)\n    return paginate(visible_items, limit, offset)', '    page, token = paginate(items, limit, offset)\n    return filter_items(grants, kind, page, actor), token'),
+    ("P39", "watch_deleted_scope_uses_scope_name", "apiserver/watchpage.py",
+     "tests/p0/test_rbac_pagination_watch.py::test_session_delete_scope_uses_internal_epishu_ref",
+     '    value = event.get("value")\n    if isinstance(value, dict):', '    value = None\n    if isinstance(value, dict):'),
+    ("P40", "list_gate_accepts_any_grant", "apiserver/authz.py",
+     "tests/p0/test_rbac_pagination_watch.py::test_get_only_actor_cannot_list",
+     '    return any(grant_verb_allows(g, verb) for g in _grants_for(grants, actor))', '    return bool(_grants_for(grants, actor))'),
+    ("P41", "continue_token_leaks_global_count", "apiserver/pagination.py",
+     "tests/p0/test_rbac_pagination_watch.py::test_hidden_objects_do_not_force_a_continue_token",
+     '    return paginate(visible_items, limit, offset)', '    page, _tok = paginate(visible_items, limit, offset)\n    return page, (str(len(items)) if len(visible_items) > len(page) else None)'),
 ]
 
 
