@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".venv", "run"}
-LOCAL_PACKAGES = {"kernel", "agents", "massaru", "nqctl", "tests", "tools"}
+LOCAL_PACKAGES = {"kernel", "agents", "massaru", "nqctl", "apiserver", "tests", "tools"}
 DEV_ALLOWED = {"pytest"}
 RUNTIME_DEPENDENCIES = {"cryptography"}
 

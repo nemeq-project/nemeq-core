@@ -60,3 +60,16 @@ watch 410, limits, fail-stop, uncommitted batch).
 - Implementer: tests/commands above.
 - Reviewer: independent diff read + at least one corruption drill.
 - Owner: accepts only with measured results and no open `block`.
+
+## 6. P0 apiserver conformance (feature/v1-apiserver-p0)
+
+```sh
+python3 -m pytest tests/p0 -q
+python3 tools/mutation_p0.py     # 14/14
+```
+
+Required: admission chain (validation → defaults → RBAC → quota → v1 read-only
+deny with AUDIT_DENY advancing rev), CAS 409/410, `/status` subresource limited
+to `epishus|sessions|quotas`, watch filtered per resource, RFC 7807 problem
+bodies, `nqctl apply/get/describe/watch` over HTTP while local
+`nqctl store fsck|verify|snapshot` keeps working.

@@ -95,6 +95,19 @@ Admission-denied requests are audited; no secret values are logged.
 - `Grant` scope is `epishu-id`/tenant; `nqctl` and `ocmanager` are clients,
   never direct store writers.
 
+## 6a. P0 server surface
+
+- `python -m apiserver [STORE] [--host H] [--port P]`; port default `8448`
+  (`NEMEQ_API_PORT`), host default `127.0.0.1` (`NEMEQ_API_HOST`).
+- Routes: `/healthz`, `/openapi.json`, `/metrics`,
+  `/apis/nemeq.io/v1alpha1/{zis,sus,epishus,sessions,grants,quotas,models}`,
+  `/{name}`, and `/{name}/status` for `epishus|sessions|quotas`.
+- `?watch=1&from_rev=N&limit=L` returns `{"items":[...]}` with
+  `{type,rev,object}`; DELETED carries `object=null`.
+- Actor comes from `X-Nemeq-Actor`; absent actor means "any grant" for RBAC.
+- `nqctl` talks to this API (`--api-url`, `NEMEQ_API_URL`, `~/.nq/config`);
+  `nqctl store ...` stays local.
+
 ## 7. SLO
 
 - Read p99 ≤ 50 ms; write p99 ≤ 150 ms at ≤ 50 rps; write p95 ≤ 100 ms.

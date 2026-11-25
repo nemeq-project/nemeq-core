@@ -30,6 +30,7 @@ jobs:
             --cov=agents \
             --cov=massaru \
             --cov=nqctl \
+            --cov=apiserver \
             --cov-fail-under=70 \
             -q
 
@@ -41,3 +42,6 @@ jobs:
 
       - name: V1 skeleton mutants (18/18)
         run: python tests/v1/mutation_run.py
+
+      - name: P0 apiserver mutants (14/14)
+        run: python tools/mutation_p0.py
