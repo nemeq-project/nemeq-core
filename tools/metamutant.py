@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -120,9 +121,8 @@ def selftest() -> int:
     if not ok:
         shutil.rmtree(work, ignore_errors=True)
         print(f"SKIP selftest: {reason}")
-        print("      Движок корректен по построению, но проверить нечем.")
-        print("      Запускать там, где pytest доступен (venv проекта).")
-        return 0
+        print("      Движок не проверен. В CI это ОТКАЗ, а не успех.")
+        return 3
     real = {
         "id": "S1", "file": "pkg/calc.py",
         "old": "    return value if value <= hi else hi",
@@ -147,18 +147,59 @@ def selftest() -> int:
     return 0 if ok else 1
 
 
+def check_spec_coverage(doc: Path, spec_path: Path) -> list[str]:
+    """Каждый мутант документа должен иметь ID и запись в spec.
+
+    Иначе возможен ложнозелёный прогон: в документе 45 мутантов, в spec описано 2,
+    оба убиты — и оба инструмента рапортуют успех, хотя 43 критерия не проверены.
+    """
+    problems: list[str] = []
+    text = doc.read_text(encoding="utf-8")
+    ids = set(re.findall(r"\[(M-[0-9A-Za-z.-]+)\]", text))
+    if not ids:
+        return [f"{doc.name}: ни у одного мутанта нет ID вида [M-...] — сверка с spec невозможна"]
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec_ids = {m.get("id") for m in spec}
+    missing = sorted(ids - spec_ids)
+    if missing:
+        problems.append(f"{doc.name}: мутанты без записи в spec: {', '.join(missing)}")
+    extra = sorted(spec_ids - ids)
+    if extra:
+        problems.append(f"{spec_path.name}: записи без мутанта в документе: {', '.join(extra)}")
+    return problems
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
     if "--selftest" in sys.argv:
         return selftest()
+    if "--coverage" in sys.argv:
+        doc = Path(sys.argv[sys.argv.index("--coverage") + 1])
+        spec = Path(sys.argv[sys.argv.index("--spec") + 1])
+        problems = check_spec_coverage(doc, spec)
+        if problems:
+            for p in problems:
+                print(p)
+            print("metamutant --coverage: FAIL")
+            return 1
+        print("metamutant --coverage: OK")
+        return 0
     if "--spec" not in sys.argv:
         print(__doc__)
         return 2
     spec_path = Path(sys.argv[sys.argv.index("--spec") + 1])
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     root = Path(sys.argv[sys.argv.index("--root") + 1]).resolve() if "--root" in sys.argv else Path.cwd()
+
+    # Нельзя выдавать вердикт, если тесты вообще не запускаются: тогда «мутанты
+    # убиты» означало бы только то, что среда сломана, а не что критерии сильны.
+    ok, reason = baseline_ok(root)
+    if not ok:
+        print(f"ОТКАЗ: {reason}")
+        print("metamutant: без работающего pytest вердикт невозможен (код 2)")
+        return 2
 
     survivors = []
     for m in spec:
