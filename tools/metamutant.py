@@ -166,6 +166,14 @@ def check_spec_coverage(doc: Path, spec_path: Path) -> list[str]:
     extra = sorted(spec_ids - ids)
     if extra:
         problems.append(f"{spec_path.name}: записи без мутанта в документе: {', '.join(extra)}")
+    # Наличие ID не доказывает исполнение: у записи обязан быть непустой test,
+    # и файл теста должен существовать. Иначе 105 мутантов описаны, а исполняются два.
+    no_test = [m.get("id") for m in spec if not (m.get("test") or "").strip()]
+    if no_test:
+        problems.append(
+            f"{spec_path.name}: записи без исполняемого теста: {len(no_test)} "
+            f"({', '.join(no_test[:5])}{'...' if len(no_test) > 5 else ''})"
+        )
     return problems
 
 
