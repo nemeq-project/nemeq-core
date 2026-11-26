@@ -1,0 +1,58 @@
+[
+ {
+  "id": "M-5.2",
+  "what": "относительный --home приводится к абсолютному от CWD",
+  "file": "massaru/layout.py",
+  "old": "    if not p.is_absolute():\n        raise PathError(f\"{what} must be an absolute path, got {value!r}\")",
+  "new": "    pass",
+  "test": "tests/p0/test_layout_resolvers.py::TestHome::test_relative_rejected"
+ },
+ {
+  "id": "M-5.3",
+  "what": "отсутствие $HOME даёт фоллбэк вместо отказа",
+  "file": "massaru/layout.py",
+  "old": "    home = environ.get(\"HOME\")\n    if not home:",
+  "new": "    home = environ.get(\"HOME\") or \"/\"\n    if False:",
+  "test": "tests/p0/test_layout_resolvers.py::TestHome::test_missing_home_rejected"
+ },
+ {
+  "id": "M-5.4",
+  "what": "имя инстанса не валидируется",
+  "file": "massaru/layout.py",
+  "old": "    if not INSTANCE_RE.fullmatch(name):\n        raise PathError(\n            f\"invalid instance name {name!r}: expected ^[a-z0-9][a-z0-9_-]{{0,31}}$\"\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_layout_resolvers.py::TestInstance::test_invalid_names_rejected"
+ },
+ {
+  "id": "M-5.5",
+  "what": "выход var за пределы home разрешён без флага",
+  "file": "massaru/layout.py",
+  "old": "    if not allow_outside_home and not _is_within(p, home):",
+  "new": "    if False:",
+  "test": "tests/p0/test_layout_resolvers.py::TestVarStore::test_env_state_root_outside_home_rejected"
+ },
+ {
+  "id": "M-6.4-g",
+  "what": "хеш лока усечён до 16 символов",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()",
+  "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()[:16]",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_full_sha256_not_truncated"
+ },
+ {
+  "id": "M-6.4-d",
+  "what": "путь лока считается от строки, а не от realpath",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()",
+  "new": "    digest = hashlib.sha256(str(store).encode(\"utf-8\")).hexdigest()",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_identity_by_realpath_not_by_name"
+ },
+ {
+  "id": "M-6.4-a",
+  "what": "лок перенесён внутрь store/",
+  "file": "massaru/layout.py",
+  "old": "    return var / \"locks\" / f\"{digest}.lock\"",
+  "new": "    return var / \"store\" / f\"{digest}.lock\"",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_inside_var_locks"
+ }
+]

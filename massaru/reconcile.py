@@ -18,10 +18,10 @@ from typing import Any
 
 from .api_types import EpishuSpec, EpishuStatus
 from .layout import (
-    DEFAULT_STATE_ROOT,
     STANDARD_DIRS,
     STANDARD_FILES,
     epishu_dir,
+    resolve_state_root,
     safe_epishu_id,
 )
 
@@ -154,7 +154,7 @@ def reconcile(
     spec: EpishuSpec,
     status: EpishuStatus | None = None,
     observed: ObservedEpishu | None = None,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
 ) -> ReconcilePlan:
     """Pure Epishu reconciliation.
 
@@ -162,6 +162,8 @@ def reconcile(
     The caller (apiserver controller loop) performs all effects and writes
     status through the API.
     """
+    if state_root is None:
+        state_root = resolve_state_root()
     current = status or EpishuStatus()
     seen = observed or ObservedEpishu()
 
