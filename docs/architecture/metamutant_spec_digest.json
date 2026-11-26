@@ -1,0 +1,82 @@
+[
+ {
+  "id": "M-7.3-b",
+  "what": "содержимое файла не хешируется, только размер",
+  "file": "massaru/digest.py",
+  "old": "            body = _u64be(st.st_size) + dig.digest() + _u32be(mode)",
+  "new": "            body = _u64be(st.st_size) + b\"\\x00\" * 32 + _u32be(mode)",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_byte_change_detected"
+ },
+ {
+  "id": "M-7.3-a",
+  "what": "каталоги не входят в digest",
+  "file": "massaru/digest.py",
+  "old": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(mode)\n                entries.append((relb, 2, body, rels))",
+  "new": "            if stat.S_ISDIR(st.st_mode):\n                if not any(True for _ in os.scandir(full)):\n                    empty_dirs.append(rels)\n                continue",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_empty_dir_removal_changes_digest"
+ },
+ {
+  "id": "M-7.3-e",
+  "what": "корневая директория не входит в набор",
+  "file": "massaru/digest.py",
+  "old": "    if include_root:\n        root_mode = stat.S_IMODE(os.lstat(root).st_mode)\n        h.update(_entry_bytes(b\"\", 2, _u32be(root_mode)))",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_root_mode_is_hashed"
+ },
+ {
+  "id": "M-7.3-i",
+  "what": "режим каталога не входит в digest",
+  "file": "massaru/digest.py",
+  "old": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(mode)",
+  "new": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(0)",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_dir_mode_changes_digest"
+ },
+ {
+  "id": "M-7.3-j",
+  "what": "записи не сортируются по relpath",
+  "file": "massaru/digest.py",
+  "old": "    entries.sort(key=lambda e: e[0])",
+  "new": "    pass",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_order_independence"
+ },
+ {
+  "id": "M-7.3-g",
+  "what": "hard links разрешены",
+  "file": "massaru/digest.py",
+  "old": "            if st.st_nlink > 1:",
+  "new": "            if False:",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_hardlink_rejected"
+ },
+ {
+  "id": "M-7.3-f",
+  "what": "особые файлы пропускаются молча",
+  "file": "massaru/digest.py",
+  "old": "            if not stat.S_ISREG(st.st_mode):\n                raise DigestError(\n                    f\"unsupported file type (fifo/socket/device): {rel}\"\n                )",
+  "new": "            if not stat.S_ISREG(st.st_mode):\n                continue",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_fifo_rejected"
+ },
+ {
+  "id": "M-7.3-c",
+  "what": "tmp/ и locks/ входят в digest",
+  "file": "massaru/digest.py",
+  "old": "        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS\n                       and not (here == root and d in EXCLUDED_DIRS)]",
+  "new": "        pass",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_tmp_and_locks_excluded"
+ },
+ {
+  "id": "M-7.4-e",
+  "what": "mode входит в content_digest",
+  "file": "massaru/digest.py",
+  "old": "        if kind == 0:\n            # отбрасываем u32be(mode) в хвосте\n            core = body[:-4]",
+  "new": "        if kind == 0:\n            core = body",
+  "test": "tests/p0/test_digest.py::TestContentVsMetadata::test_content_ignores_mode"
+ },
+ {
+  "id": "M-7.3-k",
+  "what": "не-UTF8 имена роняют digest",
+  "file": "massaru/digest.py",
+  "old": "            relb = os.fsencode(str(rel))",
+  "new": "            relb = str(rel).encode(\"utf-8\")",
+  "test": "tests/p0/test_digest.py::TestNonUtf8::test_raw_bytes_name_supported"
+ }
+]
