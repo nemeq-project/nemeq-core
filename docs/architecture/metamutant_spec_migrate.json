@@ -1,0 +1,67 @@
+[
+ {"id": "M-7.7-a", "what": "источник удаляется после успешной миграции",
+  "file": "massaru/migrate.py",
+  "old": "    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
+  "new": "    shutil.rmtree(plan.source_var, ignore_errors=True)\n    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
+  "test": "tests/p0/test_migrate.py::TestHappyPath::test_source_untouched"},
+
+ {"id": "M-7.1-b", "what": "непустой target не проверяется",
+  "file": "massaru/migrate.py",
+  "old": "    if tgt.exists() and any(tgt.iterdir()):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION, f\"target is not empty: {tgt}\"\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestPreflight::test_target_not_empty"},
+
+ {"id": "M-7.5-a", "what": "абсолютный симлинк копируется вместо отказа",
+  "file": "massaru/migrate.py",
+  "old": "                if os.path.isabs(link_target):\n                    raise MigrateError(\n                        ExitCode.NO_RULE,\n                        f\"absolute symlink not supported: {rel / name} -> {link_target}\",\n                    )",
+  "new": "                pass",
+  "test": "tests/p0/test_migrate.py::TestSymlinks::test_absolute_symlink_rejected"},
+
+ {"id": "M-7.5-b", "what": "симлинк разыменовывается при копировании",
+  "file": "massaru/migrate.py",
+  "old": "                os.symlink(link_target, t)\n                continue",
+  "new": "                shutil.copyfile(s, t, follow_symlinks=True)\n                continue",
+  "test": "tests/p0/test_migrate.py::TestSymlinks::test_relative_symlink_preserved"},
+
+ {"id": "M-6.4-i", "what": "locks/ копируется при миграции",
+  "file": "massaru/migrate.py",
+  "old": "COPY_DIRS = (\"store\", \"epishu\", \"state\", \"data\")",
+  "new": "COPY_DIRS = (\"store\", \"epishu\", \"state\", \"data\", \"locks\")",
+  "test": "tests/p0/test_migrate.py::TestHappyPath::test_locks_and_tmp_not_copied"},
+
+ {"id": "M-7.2-a", "what": "нет восстановления состояния published",
+  "file": "massaru/migrate.py",
+  "old": "    if where == \"published\":\n        # rename сделан, отчёт не записан — дописать.\n        return _finish_report(plan, state)",
+  "new": "    if where == \"published\":\n        raise MigrateError(ExitCode.IO_ERROR, \"crash after publish\")",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_resume_after_published_without_report"},
+
+ {"id": "M-7.2-c", "what": "при var и staging одновременно выбор делается молча",
+  "file": "massaru/migrate.py",
+  "old": "        if has_var and has_staging:\n            raise MigrateError(\n                ExitCode.IO_ERROR,\n                \"both var and staging exist: manual resolution required\",\n            )",
+  "new": "        if has_var and has_staging:\n            return _finish_report(plan, state)",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_with_var_and_staging_is_error"},
+
+ {"id": "M-7.2-e", "what": "состояние «нет ни var, ни staging» не обрабатывается",
+  "file": "massaru/migrate.py",
+  "old": "        raise MigrateError(\n            ExitCode.IO_ERROR, \"neither var nor staging exists: manual resolution required\"\n        )",
+  "new": "        return _finish_report(plan, state)",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_neither_exists_is_error"},
+
+ {"id": "M-7.2-d", "what": "манифест published не сверяется с фактическим digest",
+  "file": "massaru/migrate.py",
+  "old": "            if expected and actual != expected:\n                _write_state(plan.run_dir, {**state, \"state\": \"failed:corrupt_publish\"})\n                raise MigrateError(\n                    ExitCode.DATA_DIGEST,\n                    \"published tree digest does not match manifest\",\n                )",
+  "new": "            pass",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_var_without_staging_but_bad_digest"},
+
+ {"id": "M-7.4-d", "what": "content_digest не сравнивается после копирования",
+  "file": "massaru/migrate.py",
+  "old": "    if report.content_digest_source != report.content_digest_target:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})\n        raise MigrateError(\n            ExitCode.DATA_DIGEST,\n            f\"content digest mismatch: {report.content_digest_source} != {report.content_digest_target}\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestDigestGate::test_content_mismatch_detected"},
+
+ {"id": "M-7.4-f", "what": "права не нормализуются перед публикацией",
+  "file": "massaru/migrate.py",
+  "old": "    _normalize_permissions(staging)",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestNormalization::test_permissions_normalized_unprivileged"}
+]
