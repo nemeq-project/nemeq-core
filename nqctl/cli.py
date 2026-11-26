@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from massaru import store_fsck
+from massaru import instance as instance_mod
 
 from . import commands
 from .client import Client, load_config, resolve_actor, resolve_url
@@ -53,6 +54,16 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     apply_.add_argument("-f", "--file", required=True)
     apply_.set_defaults(remote_api=True, action="apply")
 
+    inst = sub.add_parser(
+        "instance", help="instance lifecycle (create/list/status/destroy/uninstall)"
+    )
+    inst.add_argument("action", choices=["create", "list", "status", "destroy", "uninstall"])
+    inst.add_argument("--home", default=None, help="prefix root (default: NEMEQ_HOME or ~/.nemeq)")
+    inst.add_argument("--instance", default=None, help="instance name (default: NEMEQ_INSTANCE)")
+    inst.add_argument("--state-root", default=None, help="override var root")
+    inst.add_argument("--purge", action="store_true", help="with uninstall: remove whole prefix")
+    inst.set_defaults(local_instance=True, action_name="instance")
+
     watch = sub.add_parser("watch", help="watch objects")
     watch.add_argument("kind")
     watch.add_argument("--from-rev", type=int, default=0)
@@ -92,6 +103,17 @@ def _remote(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
+    if getattr(args, "local_instance", False):
+        code, payload = instance_mod.run_cli_action(
+            args.action,
+            home=args.home,
+            instance=args.instance,
+            state_root=args.state_root,
+            store=None,
+            purge=args.purge,
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return code
     if getattr(args, "remote_api", False):
         return _remote(args)
     if getattr(args, "command", None) != "store":
