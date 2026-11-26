@@ -958,13 +958,23 @@ def test_spawn_and_reap(tmp_path):
     assert result2["signal"] == 9
 
     # env replaces the parent environment (it is not merged).
+    #
+    # The child needs LD_LIBRARY_PATH when the interpreter comes from a
+    # toolcache build (actions/setup-python), otherwise libpython fails to load
+    # and the process dies with 127 before our check runs. Passing it through
+    # does not weaken the assertion: PATH must still be absent, which is only
+    # true when env replaces the environment instead of merging into it.
     env_code = (
         "import os, sys; "
         "sys.exit(0 if os.environ.get('NEMEQ_ONLY') == '1' "
         "and 'PATH' not in os.environ else 1)"
     )
+    minimal_env = {
+        "NEMEQ_ONLY": "1",
+        "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+    }
     pid3 = kernel.spawn(
-        [sys.executable, "-c", env_code], env={"NEMEQ_ONLY": "1"}
+        [sys.executable, "-c", env_code], env=minimal_env
     )
     assert kernel.reap(pid3, timeout=5)["exit_code"] == 0
 

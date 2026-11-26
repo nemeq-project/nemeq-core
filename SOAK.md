@@ -1,5 +1,11 @@
 # TEXTSTORE v0.3.1 — ext4 soak result (2026-11-24)
 
+> **STATUS: FAIL — NOT A PASSED GATE.** Both profiles exceed their write
+> latency gates on this host (A: writeP99 158.9-193.3 ms vs 150; writeP95
+> 117.6-161.0 ms vs 100). Per TEXTSTORE v0.3.1 a failing profile is **outside
+> SLO** until retuned and re-measured. Thresholds are not adjusted to fit
+> measurements. See `CONFORMANCE.md` for the open SLO blocker.
+
 Command (store on ext4, not tmpfs):
 
 ```sh

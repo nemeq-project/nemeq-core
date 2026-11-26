@@ -509,7 +509,10 @@ def scan_store(
                                             if previous
                                             else ""
                                         ),
-                                        "value": None,
+                                        # Internal only: previous object for
+                                        # scope authz. Never journaled, never
+                                        # exposed as HTTP object.
+                                        "value": copy.deepcopy(previous),
                                     }
                                 )
                             else:
@@ -1285,7 +1288,8 @@ class Store:
                         "type": "DELETED",
                         "key": request.key,
                         "resourceVersion": current_rv,
-                        "value": None,
+                        # Internal only: previous object for scope authz.
+                        "value": copy.deepcopy(current),
                     }
                     stored = None
                 else:
