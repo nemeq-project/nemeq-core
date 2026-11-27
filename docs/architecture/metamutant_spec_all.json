@@ -24,6 +24,30 @@
   "test": "tests/p0/test_deps.py::TestHashVerification::test_tampered_wheel_rejected"
  },
  {
+  "id": "M-4.1-a",
+  "what": "файл вне таблицы преобразования принимается молча",
+  "file": "massaru/legacy.py",
+  "old": "            if name in {\"tmp\", \"locks\", \"pycache\"}:\n                continue  # внутренние, не переносятся\n            unknown.append(name)",
+  "new": "            continue",
+  "test": "tests/p0/test_legacy.py::TestSourceScan::test_unknown_entry_rejected"
+ },
+ {
+  "id": "M-4.1-b",
+  "what": "конфликт двух legacy-путей стора не обнаруживается",
+  "file": "massaru/legacy.py",
+  "old": "        if m.target in seen_targets and m.target != \"skip\":\n            raise LegacyError(\n                EXIT_NO_RULE,\n                f\"conflict on target {m.target!r}: \"\n                f\"{seen_targets[m.target]!r} and {name!r} (§4.1)\",\n            )",
+  "new": "        if False:\n            pass",
+  "test": "tests/p0/test_legacy.py::TestSourceScan::test_conflict_two_store_sources"
+ },
+ {
+  "id": "M-4.2-a",
+  "what": "абсолютный путь внутри данных не обнаруживается",
+  "file": "massaru/legacy.py",
+  "old": "    v = (value or \"\").strip()\n    return v.startswith(\"/\")",
+  "new": "    v = (value or \"\").strip()\n    return False",
+  "test": "tests/p0/test_legacy.py::TestAbsolutePathsInData::test_absolute_detected"
+ },
+ {
   "id": "M-4.3-a",
   "what": "PYTHONDONTWRITEBYTECODE не выставляется — lib станет записываемым",
   "file": "massaru/unit.py",
@@ -70,6 +94,30 @@
   "old": "                if uid >= 0 and uid != expecting:\n                    wrong.append(f\"{full} uid={uid}\")",
   "new": "                if False:\n                    pass",
   "test": "tests/p0/test_doctor.py::TestPermissions::test_owner_checked"
+ },
+ {
+  "id": "M-4.8-b",
+  "what": "относительный NEMEQ_HOME принимается",
+  "file": "massaru/layout.py",
+  "old": "    if not p.is_absolute():\n        raise PathError(f\"{what} must be an absolute path, got {value!r}\")",
+  "new": "    pass",
+  "test": "tests/p0/test_legacy.py::TestResolverErrors::test_relative_home_rejected"
+ },
+ {
+  "id": "M-4.8-c",
+  "what": "имя инстанса ../x не отвергается",
+  "file": "massaru/layout.py",
+  "old": "    if not INSTANCE_RE.fullmatch(name):",
+  "new": "    if False:",
+  "test": "tests/p0/test_legacy.py::TestResolverErrors::test_parent_instance_rejected"
+ },
+ {
+  "id": "M-4.8-d",
+  "what": "отсутствие $HOME даёт фоллбэк вместо отказа",
+  "file": "massaru/layout.py",
+  "old": "    home = environ.get(\"HOME\")\n    if not home:",
+  "new": "    home = environ.get(\"HOME\") or \"/\"\n    if False:",
+  "test": "tests/p0/test_legacy.py::TestResolverErrors::test_missing_home_env_rejected"
  },
  {
   "id": "M-6.1-a",
