@@ -1,0 +1,83 @@
+[
+ {
+  "id": "M-8.5-a",
+  "what": "отсутствие HOME не диагностируется",
+  "file": "massaru/doctor.py",
+  "old": "    if not resolved.home.exists():\n        _add(rep, \"home:exists\", False, f\"{resolved.home} missing — run `nqctl install`\")\n        return rep",
+  "new": "    if False:\n        return rep",
+  "test": "tests/p0/test_doctor.py::TestBasics::test_missing_home_fails"
+ },
+ {
+  "id": "M-4.7-a",
+  "what": "права var не проверяются",
+  "file": "massaru/doctor.py",
+  "old": "    _add(rep, \"perm:var\", var_mode == 0o700, f\"{resolved.var}: {oct(var_mode)}\")",
+  "new": "    _add(rep, \"perm:var\", True, f\"{resolved.var}: {oct(var_mode)}\")",
+  "test": "tests/p0/test_doctor.py::TestPermissions::test_var_mode_checked"
+ },
+ {
+  "id": "M-4.7-b",
+  "what": "чужой UID среди файлов не обнаруживается",
+  "file": "massaru/doctor.py",
+  "old": "                if uid >= 0 and uid != expecting:\n                    wrong.append(f\"{full} uid={uid}\")",
+  "new": "                if False:\n                    pass",
+  "test": "tests/p0/test_doctor.py::TestPermissions::test_owner_checked"
+ },
+ {
+  "id": "M-4.6-a",
+  "what": "длина пути до сокета не проверяется",
+  "file": "massaru/doctor.py",
+  "old": "    _add(rep, \"path:socket_len\", length <= SOCKET_PATH_LIMIT, f\"{length} chars\")",
+  "new": "    _add(rep, \"path:socket_len\", True, f\"{length} chars\")",
+  "test": "tests/p0/test_doctor.py::TestSocketPath::test_long_path_flagged"
+ },
+ {
+  "id": "M-4.7-c",
+  "what": "нехватка места не проверяется",
+  "file": "massaru/doctor.py",
+  "old": "    _add(rep, \"disk:space\", free >= need,\n         f\"{free // (1024**2)} MiB free, need {need // (1024**2)} MiB\")",
+  "new": "    _add(rep, \"disk:space\", True,\n         f\"{free // (1024**2)} MiB free, need {need // (1024**2)} MiB\")",
+  "test": "tests/p0/test_doctor.py::TestDisk::test_insufficient_space_flagged"
+ },
+ {
+  "id": "M-4.5-a",
+  "what": "отсутствие манифеста не диагностируется",
+  "file": "massaru/doctor.py",
+  "old": "    _add(rep, \"manifest:present\", bool(manifest),\n         f\"layout_version={manifest.get('layout_version')}\" if manifest else \"missing\")",
+  "new": "    _add(rep, \"manifest:present\", True,\n         f\"layout_version={manifest.get('layout_version')}\" if manifest else \"missing\")",
+  "test": "tests/p0/test_doctor.py::TestManifest::test_missing_manifest_flagged"
+ },
+ {
+  "id": "M-6.5-i",
+  "what": "требование hardened игнорируется",
+  "file": "massaru/doctor.py",
+  "old": "    if hardened_required and not rep.hardened:\n        _add(rep, \"sandbox:required\", False,\n             \"hardened profile requested but sandbox not enforced\")",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_doctor.py::TestSandbox::test_hardened_required_turns_red"
+ },
+ {
+  "id": "M-6.4-a",
+  "what": "расположение lock-файла не проверяется",
+  "file": "massaru/doctor.py",
+  "old": "    inside = str(lp).startswith(str(resolved.var / \"locks\"))\n    _add(rep, \"lock:location\", inside, str(lp))",
+  "new": "    inside = True\n    _add(rep, \"lock:location\", inside, str(lp))",
+  "test": "tests/p0/test_doctor.py::TestLock::test_lock_outside_locks_dir_flagged",
+  "note": "тест проходит и при inside=True, поэтому нужен негативный кейс"
+ },
+ {
+  "id": "M-8.9-a",
+  "what": "цель симлинка var не проверяется",
+  "file": "massaru/doctor.py",
+  "old": "    ok = target.rstrip(\"/\") == expected\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "new": "    ok = True\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "test": "tests/p0/test_doctor.py::TestLock::test_symlink_target_checked"
+ },
+ {
+  "id": "M-8.8-a",
+  "what": "отчёт не сериализуется в JSON (нет полей)",
+  "file": "massaru/doctor.py",
+  "old": "        return {\"check\": self.check, \"ok\": self.ok,\n                \"detail\": self.detail, \"severity\": self.severity}",
+  "new": "        return {}",
+  "test": "tests/p0/test_doctor.py::TestBasics::test_report_is_json_serialisable"
+ }
+]

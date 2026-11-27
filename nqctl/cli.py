@@ -13,6 +13,7 @@ from massaru import instance as instance_mod
 from massaru import install as install_mod
 from massaru import deps as deps_mod
 from massaru import unit as unit_mod
+from massaru import doctor as doctor_mod
 
 from . import commands
 from .client import Client, load_config, resolve_actor, resolve_url
@@ -91,6 +92,16 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     u.add_argument("--dry-run", action="store_true", help="print unit, do not write")
     u.set_defaults(local_unit=True, action_name="install-unit")
 
+    dr = sub.add_parser("doctor", help="diagnose installation (JSON report)")
+    dr.add_argument("--home", default=None)
+    dr.add_argument("--instance", default=None)
+    dr.add_argument("--state-root", default=None)
+    dr.add_argument("--store", default=None)
+    dr.add_argument("--max-state-bytes", type=int, default=None)
+    dr.add_argument("--hardened", action="store_true",
+                    help="require sandbox to be enforced")
+    dr.set_defaults(local_doctor=True, action_name="doctor")
+
     watch = sub.add_parser("watch", help="watch objects")
     watch.add_argument("kind")
     watch.add_argument("--from-rev", type=int, default=0)
@@ -130,6 +141,20 @@ def _remote(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
+    if getattr(args, "local_doctor", False):
+        kw = {}
+        if args.max_state_bytes is not None:
+            kw["max_state_bytes"] = args.max_state_bytes
+        code, payload = doctor_mod.run_cli_doctor(
+            home=args.home,
+            instance=args.instance,
+            state_root=args.state_root,
+            store=args.store,
+            hardened=args.hardened,
+            **kw,
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return code
     if getattr(args, "local_unit", False):
         code, payload = unit_mod.run_cli_unit(
             home=args.home,
