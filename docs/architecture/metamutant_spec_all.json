@@ -336,6 +336,30 @@
   "test": "tests/p0/test_migrate.py::TestHappyPath::test_source_untouched"
  },
  {
+  "id": "M-7.8-a",
+  "what": "оборванная транзакция в источнике не обнаруживается",
+  "file": "massaru/migrate_wal.py",
+  "old": "        if last != b\"\\n\":\n            dirty.append(seg.name)",
+  "new": "        if False:\n            dirty.append(seg.name)",
+  "test": "tests/p0/test_migrate_wal.py::TestWalDetection::test_dirty_tail_detected"
+ },
+ {
+  "id": "M-7.8-b",
+  "what": "грязный WAL не отвергается без --recover",
+  "file": "massaru/migrate_wal.py",
+  "old": "    if state[\"dirty\"] and not recover:",
+  "new": "    if False:",
+  "test": "tests/p0/test_migrate_wal.py::TestDirtyWalRefusal::test_preflight_refuses_without_recover"
+ },
+ {
+  "id": "M-7.9-a",
+  "what": "приоритет кодов не соблюдается (код 2 не первый)",
+  "file": "massaru/migrate_wal.py",
+  "old": "    for code in CODE_PRIORITY:\n        if code in codes:\n            return code",
+  "new": "    for code in codes:\n        return code",
+  "test": "tests/p0/test_migrate_wal.py::TestCodePriority::test_invocation_beats_everything"
+ },
+ {
   "id": "M-9.10-a",
   "what": "crit_lint не находит критерий без мутанта",
   "file": "tools/crit_lint.py",

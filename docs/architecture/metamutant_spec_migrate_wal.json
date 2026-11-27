@@ -1,0 +1,37 @@
+[
+ {"id": "M-7.8-a", "what": "оборванная транзакция в источнике не обнаруживается",
+  "file": "massaru/migrate_wal.py",
+  "old": "        if last != b\"\\n\":\n            dirty.append(seg.name)",
+  "new": "        if False:\n            dirty.append(seg.name)",
+  "test": "tests/p0/test_migrate_wal.py::TestWalDetection::test_dirty_tail_detected"},
+
+ {"id": "M-7.8-b", "what": "грязный WAL не отвергается без --recover",
+  "file": "massaru/migrate_wal.py",
+  "old": "    if state[\"dirty\"] and not recover:",
+  "new": "    if False:",
+  "test": "tests/p0/test_migrate_wal.py::TestDirtyWalRefusal::test_preflight_refuses_without_recover"},
+
+ {"id": "M-7.8-c", "what": "реплей не обрезает хвост до целой строки",
+  "file": "massaru/migrate_wal.py",
+  "old": "        cut = data.rfind(b\"\\n\")\n        if cut < 0:",
+  "new": "        cut = len(data) - 1\n        if cut < 0:",
+  "test": "tests/p0/test_migrate_wal.py::TestWalReplay::test_replay_trims_tail"},
+
+ {"id": "M-7.8-d", "what": "реплей изменяет источник (правит оригинал вместо копии)",
+  "file": "massaru/migrate_wal.py",
+  "old": "        target = store_dst / seg.name\n        if not target.is_file():\n            continue",
+  "new": "        target = store_src / seg.name\n        if not target.is_file():\n            continue",
+  "test": "tests/p0/test_migrate_wal.py::TestWalReplay::test_source_untouched"},
+
+ {"id": "M-7.9-a", "what": "приоритет кодов не соблюдается (код 2 не первый)",
+  "file": "massaru/migrate_wal.py",
+  "old": "    for code in CODE_PRIORITY:\n        if code in codes:\n            return code",
+  "new": "    for code in codes:\n        return code",
+  "test": "tests/p0/test_migrate_wal.py::TestCodePriority::test_invocation_beats_everything"},
+
+ {"id": "M-7.9-b", "what": "коды возврата склеены (два класса с одним числом)",
+  "file": "massaru/migrate.py",
+  "old": "    VERSION_SKEW = 13\n    FOREIGN_UID = 14",
+  "new": "    VERSION_SKEW = 13\n    FOREIGN_UID = 13",
+  "test": "tests/p0/test_migrate_wal.py::TestCodesAreDistinct::test_all_codes_unique"}
+]
