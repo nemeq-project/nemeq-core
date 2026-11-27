@@ -1,0 +1,37 @@
+[
+ {"id": "M-2.1-a", "what": "min_glibc не проверяется — install идёт на неподходящем хосте",
+  "file": "massaru/install.py",
+  "old": "    glibc_ok = libc_name == \"glibc\" and _version_ge(libc_ver, min_glibc or \"2.28\")",
+  "new": "    glibc_ok = True",
+  "test": "tests/p0/test_install.py::TestPreflight::test_glibc_too_high_rejected"},
+
+ {"id": "M-2.1-b", "what": "каталоги создаются до preflight — полуустановка при отказе",
+  "file": "massaru/install.py",
+  "old": "    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "new": "    resolved.home.mkdir(parents=True, exist_ok=True)\n    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "test": "tests/p0/test_install.py::TestPreflight::test_no_directories_created_on_failed_preflight"},
+
+ {"id": "M-4.6-a", "what": "длина пути до сокета не проверяется",
+  "file": "massaru/install.py",
+  "old": "    ok &= _chk(checks, \"socket_path_len\", longest <= 100, f\"{longest} chars\")",
+  "new": "    ok &= _chk(checks, \"socket_path_len\", True, f\"{longest} chars\")",
+  "test": "tests/p0/test_install.py::TestPreflight::test_socket_path_length_checked"},
+
+ {"id": "M-4.5-a", "what": "schema_version стора не сверяется с манифестом",
+  "file": "massaru/install.py",
+  "old": "    if supported and store_schema > supported:",
+  "new": "    if False:",
+  "test": "tests/p0/test_install.py::TestSchemaCompat::test_newer_store_schema_rejected"},
+
+ {"id": "M-4.7-a", "what": "манифест установки создаётся с правами по umask",
+  "file": "massaru/install.py",
+  "old": "    mpath.write_text(json.dumps(manifest, indent=1), encoding=\"utf-8\")\n    os.chmod(mpath, 0o600)",
+  "new": "    mpath.write_text(json.dumps(manifest, indent=1), encoding=\"utf-8\")",
+  "test": "tests/p0/test_install.py::TestInstall::test_manifest_permissions_0600"},
+
+ {"id": "M-6.3-d", "what": "повторный install не сохраняет идентичность (не идемпотентен)",
+  "file": "massaru/install.py",
+  "old": "    try:\n        info = create(resolved)\n        created = True\n    except InstanceError:\n        info = load(resolved)\n        created = False",
+  "new": "    info = create(resolved)\n    created = True",
+  "test": "tests/p0/test_install.py::TestInstall::test_install_idempotent_identity"}
+]

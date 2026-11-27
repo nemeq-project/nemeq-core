@@ -10,6 +10,7 @@ from pathlib import Path
 
 from massaru import store_fsck
 from massaru import instance as instance_mod
+from massaru import install as install_mod
 
 from . import commands
 from .client import Client, load_config, resolve_actor, resolve_url
@@ -64,6 +65,13 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     inst.add_argument("--purge", action="store_true", help="with uninstall: remove whole prefix")
     inst.set_defaults(local_instance=True, action_name="instance")
 
+    ins = sub.add_parser("install", help="install Nemeq into a prefix")
+    ins.add_argument("--home", default=None)
+    ins.add_argument("--instance", default=None)
+    ins.add_argument("--state-root", default=None)
+    ins.add_argument("--min-glibc", default=None, help="override required glibc")
+    ins.set_defaults(local_install=True, action_name="install")
+
     watch = sub.add_parser("watch", help="watch objects")
     watch.add_argument("kind")
     watch.add_argument("--from-rev", type=int, default=0)
@@ -103,6 +111,15 @@ def _remote(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
+    if getattr(args, "local_install", False):
+        code, payload = install_mod.run_cli_install(
+            home=args.home,
+            instance=args.instance,
+            state_root=args.state_root,
+            min_glibc=args.min_glibc,
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return code
     if getattr(args, "local_instance", False):
         code, payload = instance_mod.run_cli_action(
             args.action,
