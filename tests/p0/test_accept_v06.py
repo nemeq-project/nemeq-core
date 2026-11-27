@@ -872,7 +872,18 @@ class TestNonRootIdempotency:
             r = resolve_all(home=str(home), instance="alpha", env={})
             install(r)
             assert (home / "config" / "home.toml").is_file()
-            assert run_doctor(r).ok
+
+            # Проверяем именно §9.8 п.5 (пробел и не-ASCII в пути), а НЕ
+            # общий doctor.ok: тот включает квоту диска (3670 MiB) и
+            # sandbox-флаги systemd, которых в контейнере нет. Прогон на
+            # tmpfs 7.2G давал ложное падение из-за свободного места —
+            # тест падал не по своей теме.
+            rep = run_doctor(r)
+            bad = [f for f in rep.findings
+                   if not f.ok and (f.check.startswith("path") or
+                                     f.check.startswith("home") or
+                                     f.check.startswith("lock"))]
+            assert not bad, f"путь с пробелом/не-ASCII сломал проверки: {bad}"
         finally:
             import shutil
 

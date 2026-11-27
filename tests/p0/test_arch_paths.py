@@ -145,7 +145,10 @@ def scan_ast(root: Path) -> list[str]:
             continue
         if rel in ALLOWED_FILES:
             continue
-        if any(s in rel for s in ("/docs/", "/tests/fixtures/", "tests/p0/")):
+        # tests/p0 НЕ исключается: AST-проверка обязана видеть конкатенацию
+        # в самих тестах так же, как в коде. Исключение каталога оставляло
+        # ровно ту слепую зону, которую §9.1 и должен закрывать.
+        if any(s in rel for s in ("/docs/", "/tests/fixtures/")):
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -153,8 +156,24 @@ def scan_ast(root: Path) -> list[str]:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value in FORBIDDEN_ROOTS:
-                    hits.append(f"{rel}:{node.lineno}: raw literal {node.value!r}")
+                # Одиночный "/var" — не путь ОС: это может быть суффикс
+                # сравнения (`p.endswith("/var")` для ReadWritePaths) или
+                # сегмент. Нарушение — литерал, который ЯВЛЯЕТСЯ путём nemeq:
+                # либо содержит "nemeq", либо им продолжается сборка
+                # (ловим отдельно по AST-склейке ниже).
+                lit = node.value
+                if lit in FORBIDDEN_ROOTS and TARGET_SEGMENT not in lit:
+                    # Разрешаем только суффиксные сравнения: endswith/startswith
+                    # с этим литералом, где путь собирается из переменной.
+                    parent_is_suffix = False
+                    for anc in ast.walk(tree):
+                        if isinstance(anc, ast.Call) and isinstance(anc.func, ast.Attribute):
+                            if anc.func.attr in ("endswith", "startswith"):
+                                for a in anc.args:
+                                    if a is node:
+                                        parent_is_suffix = True
+                    if not parent_is_suffix:
+                        hits.append(f"{rel}:{node.lineno}: raw literal {lit!r}")
 
             # os.path.join(...): цель — последний сегмент "nemeq",
             # а один из предыдущих — запрещённый корень (по имени сегмента).
@@ -405,7 +424,7 @@ def scan_mount_usage(root: Path) -> list[str]:
     hits: list[str] = []
     for path in root.rglob("*.py"):
         rel = str(path.relative_to(root))
-        if rel in ALLOWED_FILES or "/tests/fixtures/" in rel or rel.startswith("tests/p0/"):
+        if rel in ALLOWED_FILES or "/tests/fixtures/" in rel:
             continue
         if any(part in rel.split("/") for part in (".git", "__pycache__")):
             continue
