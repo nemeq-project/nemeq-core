@@ -1,0 +1,58 @@
+[
+ {
+  "id": "M-9.10-a",
+  "what": "crit_lint не находит критерий без мутанта",
+  "file": "tools/crit_lint.py",
+  "old": "        if not mutant_lines:\n            problems.append(f\"{path.name}:{idx+1} критерий без мутанта: {head[:70]}\")\n            continue",
+  "new": "        if not mutant_lines:\n            continue",
+  "test": "tests/p0/test_tools_selftest.py::TestCritLintSelftest::test_selftest_is_not_vacuous"
+ },
+ {
+  "id": "M-9.10-b",
+  "what": "metamutant не отличает инфраструктурное падение от логического",
+  "file": "tools/metamutant.py",
+  "old": "        if is_infra_failure(out, mutant[\"test\"]):\n            return False, \"тест упал по инфраструктуре, не из-за мутанта\"",
+  "new": "        if False:\n            return False, \"тест упал по инфраструктуре, не из-за мутанта\"",
+  "test": "tests/p0/test_tools_semantics.py::TestInfraFailureNotAKill::test_infra_error_is_not_counted_as_killed"
+ },
+ {
+  "id": "M-9.10-c",
+  "what": "SKIP при отсутствии pytest возвращает 0 вместо 3",
+  "file": "tools/metamutant.py",
+  "old": "        print(f\"SKIP selftest: {reason}\")\n        print(\"      Движок не проверен. В CI это ОТКАЗ, а не успех.\")\n        return 3",
+  "new": "        print(f\"SKIP selftest: {reason}\")\n        return 0",
+  "test": "tests/p0/test_tools_semantics.py::TestSkipIsRefusal::test_skip_returns_code_3"
+ },
+ {
+  "id": "M-9.10-d",
+  "what": "мутант документа без записи в spec не обнаруживается",
+  "file": "tools/metamutant.py",
+  "old": "    missing = sorted(ids - spec_ids)\n    if missing:\n        problems.append(f\"{doc.name}: мутанты без записи в spec: {', '.join(missing)}\")",
+  "new": "    missing = []\n    if missing:\n        problems.append(f\"{doc.name}: мутанты без записи в spec: {', '.join(missing)}\")",
+  "test": "tests/p0/test_tools_selftest.py::TestCoverageDetectsProblems::test_missing_entry_detected"
+ },
+ {
+  "id": "M-9.10-e",
+  "what": "запись с пустым test принимается",
+  "file": "tools/metamutant.py",
+  "old": "    no_test = [m.get(\"id\") for m in spec if not (m.get(\"test\") or \"\").strip()]\n    if no_test:",
+  "new": "    no_test = []\n    if no_test:",
+  "test": "tests/p0/test_tools_selftest.py::TestCoverageDetectsProblems::test_empty_test_field_detected"
+ },
+ {
+  "id": "M-9.10-f",
+  "what": "несуществующий файл теста не проверяется",
+  "file": "tools/metamutant.py",
+  "old": "        file_part = test.split(\"::\")[0]\n        if not (root / file_part).is_file():\n            missing_files.append(f\"{m.get('id')} -> {file_part}\")",
+  "new": "        file_part = test.split(\"::\")[0]\n        if False:\n            missing_files.append(f\"{m.get('id')} -> {file_part}\")",
+  "test": "tests/p0/test_tools_selftest.py::TestCoverageDetectsProblems::test_nonexistent_test_file_detected"
+ },
+ {
+  "id": "M-9.10-g",
+  "what": "пустой spec даёт успех вместо отказа",
+  "file": "tools/metamutant.py",
+  "old": "    if not spec:\n        print(f\"{spec_path.name}: список мутантов пуст — прогон невозможен (код 2)\")\n        return 2",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_tools_selftest.py::TestCoverageDetectsProblems::test_empty_spec_is_error_not_success"
+ }
+]

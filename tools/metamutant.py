@@ -58,14 +58,53 @@ INFRA_MARKERS = (
 )
 
 
+def is_infra_failure(out: str, test_target: str) -> bool:
+    """Отличить «тест не запустился» от «тест упал по логике».
+
+    Смотреть на весь stdout нельзя: pytest печатает локальные переменные и текст
+    assert, поэтому подстрока из самого теста даёт ложное срабатывание.
+    Признаём инфраструктурой только те случаи, когда НЕ выполнялся целевой тест:
+
+      * `no tests ran` / `errors during collection` / `file or directory not found`
+        — тест не дошёл до исполнения;
+      * `ModuleNotFoundError: No module named pytest` — среда без pytest.
+
+    Ключевое отличие: если в выводе есть `FAILED <target>`, значит тест
+    ИСПОЛНЯЛСЯ и упал по логике — это убийство мутанта, а не инфраструктура.
+    """
+    text = out or ""
+    lower = text.lower()
+
+    # Тест реально исполнялся и упал по assert/исключению — это убийство.
+    if f"failed {test_target}".lower() in lower:
+        return False
+    if test_target and test_target in text and "failed" in lower:
+        return False
+
+    # Не дошло до исполнения теста.
+    for phrase in ("no tests ran", "errors during collection",
+                   "file or directory not found", "command not found"):
+        if phrase in lower:
+            return True
+
+    # Среда без pytest: проверяем по строке traceback, а не по вхождению
+    # в произвольный текст.
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("ModuleNotFoundError", "ImportError")):
+            if "pytest" in stripped and "No module named" in stripped:
+                return True
+
+    return False
+
+
 def baseline_ok(root: Path) -> tuple[bool, str]:
     """Базовый прогон ДО мутанта: если он красный, мутанты бессмысленны."""
     rc, out = run_test(root, ".")
     if rc == 0:
         return True, ""
-    for marker in INFRA_MARKERS:
-        if marker.lower() in out.lower():
-            return False, f"тесты не запускаются: {marker}"
+    if is_infra_failure(out, "."):
+        return False, "тесты не запускаются (инфраструктура)"
     return False, "базовый прогон уже красный (мутанты бессмысленны)"
 
 
@@ -83,10 +122,8 @@ def kill_mutant(root: Path, mutant: dict) -> tuple[bool, str]:
         rc, out = run_test(root, mutant["test"])
         if rc == 0:
             return False, out  # тест зелёный → мутант выжил (вакуумный)
-        # тест упал: убедиться, что это из-за логики, а не инфраструктуры
-        for marker in INFRA_MARKERS:
-            if marker.lower() in out.lower():
-                return False, f"тест упал по инфраструктуре ({marker}), не из-за мутанта"
+        if is_infra_failure(out, mutant["test"]):
+            return False, "тест упал по инфраструктуре, не из-за мутанта"
         return True, out
     finally:
         path.write_text(original, encoding="utf-8")
@@ -174,6 +211,25 @@ def check_spec_coverage(doc: Path, spec_path: Path) -> list[str]:
             f"{spec_path.name}: записи без исполняемого теста: {len(no_test)} "
             f"({', '.join(no_test[:5])}{'...' if len(no_test) > 5 else ''})"
         )
+
+    # Файл теста обязан существовать: иначе «исполняемый» тест — фикция.
+    root = spec_path.parent.parent.parent
+    missing_files = []
+    for m in spec:
+        test = (m.get("test") or "").strip()
+        if not test:
+            continue
+        file_part = test.split("::")[0]
+        if not (root / file_part).is_file():
+            missing_files.append(f"{m.get('id')} -> {file_part}")
+    if missing_files:
+        problems.append(
+            f"{spec_path.name}: файл теста не существует: {len(missing_files)} "
+            f"({'; '.join(missing_files[:3])}{'...' if len(missing_files) > 3 else ''})"
+        )
+
+    if not spec:
+        problems.append(f"{spec_path.name}: spec пуст — вердикт невозможен")
     return problems
 
 
@@ -199,6 +255,9 @@ def main() -> int:
         return 2
     spec_path = Path(sys.argv[sys.argv.index("--spec") + 1])
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    if not spec:
+        print(f"{spec_path.name}: список мутантов пуст — прогон невозможен (код 2)")
+        return 2
     root = Path(sys.argv[sys.argv.index("--root") + 1]).resolve() if "--root" in sys.argv else Path.cwd()
 
     # Нельзя выдавать вердикт, если тесты вообще не запускаются: тогда «мутанты
