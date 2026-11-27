@@ -1,0 +1,49 @@
+[
+ {"id": "M-2.5-a", "what": "sha256 колеса не сверяется с манифестом",
+  "file": "massaru/deps.py",
+  "old": "        actual = _sha256_file(path)\n        if actual != expected:",
+  "new": "        actual = _sha256_file(path)\n        if False:",
+  "test": "tests/p0/test_deps.py::TestHashVerification::test_tampered_wheel_rejected"},
+
+ {"id": "M-2.5-b", "what": ".pth внутри колеса не отвергается",
+  "file": "massaru/deps.py",
+  "old": "    bad_pth = [n for n in names if n.endswith(\".pth\")]\n    if bad_pth:",
+  "new": "    bad_pth = []\n    if bad_pth:",
+  "test": "tests/p0/test_deps.py::TestFormatCheck::test_pth_rejected"},
+
+ {"id": "M-2.5-c", "what": "*.data/ внутри колеса не отвергается",
+  "file": "massaru/deps.py",
+  "old": "    bad_data = [n for n in names if \".data/\" in n]\n    if bad_data:",
+  "new": "    bad_data = []\n    if bad_data:",
+  "test": "tests/p0/test_deps.py::TestFormatCheck::test_data_dir_rejected"},
+
+ {"id": "M-2.5-d", "what": "проверка формата выполняется после записи в target",
+  "file": "massaru/deps.py",
+  "old": "    wheels = verify_wheelhouse(wheelhouse)\n    for w in wheels:\n        check_wheel_format(w)\n        verify_record(w)",
+  "new": "    wheels = verify_wheelhouse(wheelhouse)\n    target.mkdir(parents=True, exist_ok=True)\n    for w in wheels:\n        check_wheel_format(w)\n        verify_record(w)",
+  "test": "tests/p0/test_deps.py::TestFormatCheck::test_nothing_written_on_rejection"},
+
+ {"id": "M-2.5-e", "what": "RECORD колеса не сверяется с содержимым",
+  "file": "massaru/deps.py",
+  "old": "            if got != want:\n                raise DepsError(\n                    EXIT_SUPPLY_HASH,\n                    f\"{wheel.name}: RECORD mismatch for {name}\",\n                )",
+  "new": "            if False:\n                pass",
+  "test": "tests/p0/test_deps.py::TestRecord::test_broken_record_rejected"},
+
+ {"id": "M-4.3-b", "what": "байткод не компилируется при установке зависимостей",
+  "file": "massaru/deps.py",
+  "old": "    report.compiled = _compile(target)",
+  "new": "    report.compiled = 0",
+  "test": "tests/p0/test_deps.py::TestInstall::test_bytecode_compiled"},
+
+ {"id": "M-4.7-a", "what": "распакованные файлы получают права по umask, не 0600",
+  "file": "massaru/deps.py",
+  "old": "                os.chmod(dest, 0o600)",
+  "new": "                pass",
+  "test": "tests/p0/test_deps.py::TestInstall::test_permissions_0600"},
+
+ {"id": "M-2.5-f", "what": "колесо без записи в манифесте принимается",
+  "file": "massaru/deps.py",
+  "old": "    if extra:\n        raise DepsError(EXIT_SUPPLY_HASH, f\"wheels not in manifest: {', '.join(extra)}\")",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_deps.py::TestHashVerification::test_wheel_not_in_manifest_rejected"}
+]

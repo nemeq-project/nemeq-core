@@ -11,6 +11,7 @@ from pathlib import Path
 from massaru import store_fsck
 from massaru import instance as instance_mod
 from massaru import install as install_mod
+from massaru import deps as deps_mod
 
 from . import commands
 from .client import Client, load_config, resolve_actor, resolve_url
@@ -72,6 +73,13 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     ins.add_argument("--min-glibc", default=None, help="override required glibc")
     ins.set_defaults(local_install=True, action_name="install")
 
+    dep = sub.add_parser("deps", help="dependency delivery (offline wheelhouse)")
+    dep.add_argument("action", choices=["install", "verify", "format-check"])
+    dep.add_argument("--wheelhouse", required=True, help="directory with *.whl + manifest.sha256")
+    dep.add_argument("--target", required=True, help="lib/pydeps destination")
+    dep.add_argument("--force", action="store_true", help="overwrite non-empty target")
+    dep.set_defaults(local_deps=True, action_name="deps")
+
     watch = sub.add_parser("watch", help="watch objects")
     watch.add_argument("kind")
     watch.add_argument("--from-rev", type=int, default=0)
@@ -111,6 +119,15 @@ def _remote(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
+    if getattr(args, "local_deps", False):
+        code, payload = deps_mod.run_cli_deps(
+            args.action,
+            wheelhouse=args.wheelhouse,
+            target=args.target,
+            force=args.force,
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return code
     if getattr(args, "local_install", False):
         code, payload = install_mod.run_cli_install(
             home=args.home,
