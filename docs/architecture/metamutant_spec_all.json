@@ -16,6 +16,30 @@
   "test": "tests/p0/test_install.py::TestPreflight::test_no_directories_created_on_failed_preflight"
  },
  {
+  "id": "M-2.2-a",
+  "what": "в установку добавлен сетевой вызов (зависимость из сети)",
+  "file": "massaru/install.py",
+  "old": "    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "new": "    import urllib.request\n    urllib.request.urlopen('https://pypi.org/simple/', timeout=3)\n    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "test": "tests/p0/test_policy.py::TestNoNetwork::test_install_path_makes_no_network_calls"
+ },
+ {
+  "id": "M-2.3-a",
+  "what": "разрешён вызов запрещённой утилиты (cp вместо shutil)",
+  "file": "massaru/policy.py",
+  "old": "    if name in FORBIDDEN_COMMANDS:\n        raise PolicyError(\n            EXIT_BAD_INVOCATION,\n            f\"command {name!r} is forbidden (§2.3): use a stdlib call instead\",\n        )",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_policy.py::TestAllowList::test_forbidden_commands_rejected"
+ },
+ {
+  "id": "M-2.4-a",
+  "what": "site-packages в sys.path не обнаруживается",
+  "file": "massaru/policy.py",
+  "old": "        if (\"site-packages\" in low or \"dist-packages\" in low\n                or \"/.local/lib\" in low):\n            bad.append(resolved)",
+  "new": "        if False:\n            bad.append(resolved)",
+  "test": "tests/p0/test_policy.py::TestSysPathBarrier::test_hostile_entries_detected"
+ },
+ {
   "id": "M-2.5-a",
   "what": "sha256 колеса не сверяется с манифестом",
   "file": "massaru/deps.py",
