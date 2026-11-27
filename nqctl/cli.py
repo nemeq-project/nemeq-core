@@ -12,6 +12,7 @@ from massaru import store_fsck
 from massaru import instance as instance_mod
 from massaru import install as install_mod
 from massaru import deps as deps_mod
+from massaru import unit as unit_mod
 
 from . import commands
 from .client import Client, load_config, resolve_actor, resolve_url
@@ -80,6 +81,16 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     dep.add_argument("--force", action="store_true", help="overwrite non-empty target")
     dep.set_defaults(local_deps=True, action_name="deps")
 
+    u = sub.add_parser("install-unit", help="generate systemd unit for an instance")
+    u.add_argument("--home", default=None)
+    u.add_argument("--instance", default=None)
+    u.add_argument("--state-root", default=None)
+    u.add_argument("--store", default=None)
+    u.add_argument("--system", action="store_true", help="system unit (requires root)")
+    u.add_argument("--user", default=None, help="home dir for user unit")
+    u.add_argument("--dry-run", action="store_true", help="print unit, do not write")
+    u.set_defaults(local_unit=True, action_name="install-unit")
+
     watch = sub.add_parser("watch", help="watch objects")
     watch.add_argument("kind")
     watch.add_argument("--from-rev", type=int, default=0)
@@ -119,6 +130,18 @@ def _remote(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Точка входа: HTTP-команды в _remote, локальные store-команды здесь."""
     args = build_parser().parse_args(argv)
+    if getattr(args, "local_unit", False):
+        code, payload = unit_mod.run_cli_unit(
+            home=args.home,
+            instance=args.instance,
+            state_root=args.state_root,
+            store=args.store,
+            system=args.system,
+            user=args.user,
+            write=not args.dry_run,
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return code
     if getattr(args, "local_deps", False):
         code, payload = deps_mod.run_cli_deps(
             args.action,

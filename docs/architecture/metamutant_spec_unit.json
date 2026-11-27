@@ -1,0 +1,74 @@
+[
+ {
+  "id": "M-6.5-a",
+  "what": "имя юнита без имени инстанса — два инстанса конфликтуют",
+  "file": "massaru/unit.py",
+  "old": "    return f\"nemeq-{instance}.service\"",
+  "new": "    return \"nemeq.service\"",
+  "test": "tests/p0/test_unit.py::TestNaming::test_unit_name_contains_instance"
+ },
+ {
+  "id": "M-6.5-b",
+  "what": "%h допускается в юните",
+  "file": "massaru/unit.py",
+  "old": "    for spec in FORBIDDEN_SPECIFIERS:\n        if spec in content:",
+  "new": "    for spec in ():\n        if spec in content:",
+  "test": "tests/p0/test_unit.py::TestSpecifiers::test_reject_specifier_injection"
+ },
+ {
+  "id": "M-6.5-c",
+  "what": "в юнит попадает относительный путь",
+  "file": "massaru/unit.py",
+  "old": "        f\"Environment=NEMEQ_HOME={resolved.home}\",",
+  "new": "        f\"Environment=NEMEQ_HOME={resolved.instance}\",",
+  "test": "tests/p0/test_unit.py::TestPaths::test_all_paths_absolute"
+ },
+ {
+  "id": "M-6.5-d",
+  "what": "ReadWritePaths открывает весь префикс вместо узких каталогов",
+  "file": "massaru/unit.py",
+  "old": "        f\"ReadWritePaths={var}\",\n        f\"ReadWritePaths={logs}\",\n        f\"ReadWritePaths={run}\",",
+  "new": "        f\"ReadWritePaths={resolved.home}\",",
+  "test": "tests/p0/test_unit.py::TestPaths::test_readwrite_narrowed"
+ },
+ {
+  "id": "M-6.5-e",
+  "what": "lib не помечен ReadOnlyPaths",
+  "file": "massaru/unit.py",
+  "old": "        f\"ReadOnlyPaths={lib}\",",
+  "new": "",
+  "test": "tests/p0/test_unit.py::TestPaths::test_lib_readonly"
+ },
+ {
+  "id": "M-6.5-f",
+  "what": "юнит всегда системный — установка без root невозможна",
+  "file": "massaru/unit.py",
+  "old": "    if system:\n        path = Path(UNIT_DIR_SYSTEM) / unit_name(inst)",
+  "new": "    if True:\n        path = Path(UNIT_DIR_SYSTEM) / unit_name(inst)",
+  "test": "tests/p0/test_unit.py::TestModes::test_user_unit_by_default"
+ },
+ {
+  "id": "M-6.5-g",
+  "what": "hardening-ключи выпали из юнита",
+  "file": "massaru/unit.py",
+  "old": "        \"NoNewPrivileges=yes\",\n        \"PrivateTmp=yes\",\n        \"ProtectSystem=strict\",\n        \"ProtectHome=read-only\",",
+  "new": "",
+  "test": "tests/p0/test_unit.py::TestHardening::test_sandbox_keys_present"
+ },
+ {
+  "id": "M-4.3-a",
+  "what": "PYTHONDONTWRITEBYTECODE не выставляется — lib станет записываемым",
+  "file": "massaru/unit.py",
+  "old": "        \"Environment=PYTHONDONTWRITEBYTECODE=1\",",
+  "new": "",
+  "test": "tests/p0/test_unit.py::TestHardening::test_no_bytecode_env"
+ },
+ {
+  "id": "M-6.5-h",
+  "what": "каталог юнита создаётся с правами по umask",
+  "file": "massaru/unit.py",
+  "old": "    if not spec.system:\n        os.chmod(spec.path.parent, 0o700)",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_unit.py::TestWrite::test_dir_permission_0700"
+ }
+]

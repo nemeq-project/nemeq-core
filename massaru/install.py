@@ -231,12 +231,44 @@ def install(
     # Байткод компилируется в lib/ при install (§4.3), дальше запись запрещена.
     _compile_bytecode(lib)
 
+    # Шимы в bin/: без них ExecStart юнита ссылается в пустоту
+    # (systemd-analyze verify указывал «not executable: No such file or directory»).
+    _write_shims(resolved)
+
     return {
         "installed": info.as_dict(),
         "manifest": manifest,
         "preflight": pf.as_dict(),
         "created": created,
     }
+
+
+SHIM = """#!/bin/sh
+# Сгенерировано `nqctl install`. Не править вручную.
+export PYTHONDONTWRITEBYTECODE=1
+export NEMEQ_HOME="{home}"
+export NEMEQ_INSTANCE="{instance}"
+exec "{python}" -m {module} "$@"
+"""
+
+
+def _write_shims(resolved: Resolved) -> None:
+    """Создать bin/nqctl, bin/nemeq-apiserver, bin/nemeq-massaru с абсолютными путями."""
+    bin_dir = resolved.home / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(bin_dir, 0o700)
+
+    for name, module in (
+        ("nqctl", "nqctl"),
+        ("nemeq-apiserver", "apiserver"),
+        ("nemeq-massaru", "massaru"),
+    ):
+        path = bin_dir / name
+        path.write_text(SHIM.format(
+            home=resolved.home, instance=resolved.instance,
+            python=sys.executable, module=module,
+        ), encoding="utf-8")
+        os.chmod(path, 0o700)
 
 
 def _compile_bytecode(lib: Path) -> None:
