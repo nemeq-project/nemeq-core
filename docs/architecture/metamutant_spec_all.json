@@ -248,6 +248,22 @@
   "test": "tests/p0/test_digest.py::TestDigestBasics::test_dir_mode_changes_digest"
  },
  {
+  "id": "M-7.4-a",
+  "what": "root запускает миграцию без --root-assisted",
+  "file": "massaru/migrate.py",
+  "old": "    if os.geteuid() == 0 and not plan.root_assisted:\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION,\n            \"running as root requires --root-assisted\",\n        )",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_migrate_modes.py::TestRootAssistedFlag::test_root_without_flag_rejected"
+ },
+ {
+  "id": "M-7.4-b",
+  "what": "non-root может отдать стор root (эскалация)",
+  "file": "massaru/migrate.py",
+  "old": "    if plan.root_assisted and plan.target_uid == 0 and os.geteuid() != 0:",
+  "new": "    if False:",
+  "test": "tests/p0/test_migrate_modes.py::TestTargetUidZero::test_target_uid_zero_rule_is_checked"
+ },
+ {
   "id": "M-7.4-d",
   "what": "content_digest не сравнивается после копирования",
   "file": "massaru/migrate.py",
@@ -257,11 +273,11 @@
  },
  {
   "id": "M-7.4-e",
-  "what": "mode входит в content_digest",
+  "what": "content_digest зависит от прав (mode включён)",
   "file": "massaru/digest.py",
   "old": "        if kind == 0:\n            # отбрасываем u32be(mode) в хвосте\n            core = body[:-4]",
   "new": "        if kind == 0:\n            core = body",
-  "test": "tests/p0/test_digest.py::TestContentVsMetadata::test_content_ignores_mode"
+  "test": "tests/p0/test_migrate_modes.py::TestModeNormalization::test_content_digest_ignores_mode"
  },
  {
   "id": "M-7.4-f",
@@ -270,6 +286,30 @@
   "old": "    _normalize_permissions(staging)",
   "new": "    pass",
   "test": "tests/p0/test_migrate.py::TestNormalization::test_permissions_normalized_unprivileged"
+ },
+ {
+  "id": "M-7.4-h",
+  "what": "права не нормализуются в миграции (0644 остаётся)",
+  "file": "massaru/migrate.py",
+  "old": "    _normalize_permissions(staging)",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate_modes.py::TestModeNormalization::test_source_0644_becomes_0600"
+ },
+ {
+  "id": "M-7.4-i",
+  "what": "файл третьего uid принимается без --adopt-uid",
+  "file": "massaru/migrate.py",
+  "old": "    bad = _foreign_uids(src, allowed)\n    if bad:",
+  "new": "    bad = []\n    if bad:",
+  "test": "tests/p0/test_migrate_modes.py::TestForeignUid::test_foreign_uid_rejected_without_adopt"
+ },
+ {
+  "id": "M-7.4-j",
+  "what": "adopt_uids не расширяют множество допустимых uid",
+  "file": "massaru/migrate.py",
+  "old": "    allowed.update(plan.adopt_uids)",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate_modes.py::TestForeignUid::test_foreign_uid_accepted_with_adopt"
  },
  {
   "id": "M-7.5-a",
