@@ -88,6 +88,14 @@
   "test": "tests/p0/test_deps.py::TestInstall::test_bytecode_compiled"
  },
  {
+  "id": "M-4.4-a",
+  "what": "var/tmp на другой ФС → doctor падает (EXDEV на rename)",
+  "file": "massaru/doctor.py",
+  "old": "        same = tmp_dev == epishu_dev",
+  "new": "        same = True",
+  "test": "tests/p0/test_doctor.py::TestFilesystems::test_cross_device_tmp_flagged"
+ },
+ {
   "id": "M-4.5-a",
   "what": "schema_version стора не сверяется с манифестом",
   "file": "massaru/install.py",
@@ -118,6 +126,14 @@
   "old": "                if uid >= 0 and uid != expecting:\n                    wrong.append(f\"{full} uid={uid}\")",
   "new": "                if False:\n                    pass",
   "test": "tests/p0/test_doctor.py::TestPermissions::test_owner_checked"
+ },
+ {
+  "id": "M-4.8-a",
+  "what": "добавить overlay-монтирование в run/ → архитектурный тест §4.8 падает",
+  "file": "massaru/runtime_state.py",
+  "old": "def runtime_path(resolved: Resolved) -> Path:\n    return run_dir(resolved.home, resolved.instance) / RUNTIME_FILE",
+  "new": "def runtime_path(resolved: Resolved) -> Path:\n    os.mount('overlay', str(run_dir(resolved.home, resolved.instance)), 'overlay', 0, 'lowerdir=/tmp')\n    return run_dir(resolved.home, resolved.instance) / RUNTIME_FILE",
+  "test": "tests/p0/test_arch_paths.py::TestRunWithoutOverlay::test_no_mount_calls_in_sources"
  },
  {
   "id": "M-4.8-b",
@@ -312,6 +328,14 @@
   "test": "tests/p0/test_unit.py::TestPaths::test_all_paths_absolute"
  },
  {
+  "id": "M-7.1-a",
+  "what": "migrate при живом сервисе → код 2 и ни одного файла в target",
+  "file": "massaru/migrate.py",
+  "old": "    if _service_lock_held(src, src / \"store\", plan.home):\n        name = f\"nemeq-{plan.instance}\" if plan.instance else \"nemeq\"\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION,\n            f\"service is running ({name}): stop {name} first\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate_accept.py::TestServiceMustBeStopped::test_live_service_refused"
+ },
+ {
   "id": "M-7.1-b",
   "what": "непустой target не проверяется",
   "file": "massaru/migrate.py",
@@ -352,6 +376,14 @@
   "test": "tests/p0/test_migrate.py::TestRecovery::test_resume_after_published_without_report"
  },
  {
+  "id": "M-7.2-b",
+  "what": "прерывание между шагами 8 и 9 → возврат в verifying, публикации нет",
+  "file": "massaru/migrate.py",
+  "old": "            expected = state.get(\"content_digest\") or content_digest(plan.source_var)",
+  "new": "            expected = content_digest(staging)",
+  "test": "tests/p0/test_migrate_accept.py::TestResumeBetweenIntentAndRename::test_corrupt_staging_is_not_published"
+ },
+ {
   "id": "M-7.2-d",
   "what": "манифест published не сверяется с фактическим digest",
   "file": "massaru/migrate.py",
@@ -366,6 +398,14 @@
   "old": "        raise MigrateError(\n            ExitCode.IO_ERROR, \"neither var nor staging exists: manual resolution required\"\n        )",
   "new": "        return _finish_report(plan, state)",
   "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_neither_exists_is_error"
+ },
+ {
+  "id": "M-7.2-f",
+  "what": "убрать fsync родителя run/ → маркер не переживает kill -9",
+  "file": "massaru/migrate.py",
+  "old": "    _fsync_dir(run_dir)\n    _fsync_dir(run_dir.parent)",
+  "new": "    _fsync_dir(run_dir)",
+  "test": "tests/p0/test_migrate_accept.py::TestMarkerDurability::test_state_write_fsyncs_file_dir_and_parent"
  },
  {
   "id": "M-7.3-a",
@@ -392,6 +432,14 @@
   "test": "tests/p0/test_digest.py::TestRestrictions::test_tmp_and_locks_excluded"
  },
  {
+  "id": "M-7.3-d",
+  "what": "не сортировать записи → digest зависит от порядка обхода ФС",
+  "file": "massaru/digest.py",
+  "old": "    entries.sort(key=lambda e: e[0])",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate_accept.py::TestDigestOrderStability::test_reversed_walk_same_digest"
+ },
+ {
   "id": "M-7.3-e",
   "what": "корневая директория не входит в набор",
   "file": "massaru/digest.py",
@@ -414,6 +462,14 @@
   "old": "            if st.st_nlink > 1:",
   "new": "            if False:",
   "test": "tests/p0/test_digest.py::TestRestrictions::test_hardlink_rejected"
+ },
+ {
+  "id": "M-7.3-h",
+  "what": "декодировать имя как UTF-8 → падение на сырых байтах \\xff",
+  "file": "massaru/digest.py",
+  "old": "            relb = os.fsencode(str(rel))",
+  "new": "            relb = str(rel).encode(\"utf-8\")",
+  "test": "tests/p0/test_migrate_accept.py::TestNonUtf8NameInMigration::test_migration_copies_raw_name"
  },
  {
   "id": "M-7.3-i",
@@ -440,6 +496,14 @@
   "test": "tests/p0/test_migrate_modes.py::TestTargetUidZero::test_target_uid_zero_rule_is_checked"
  },
  {
+  "id": "M-7.4-c",
+  "what": "не переприсваивать run/migration*.json → файл остаётся за root",
+  "file": "massaru/migrate.py",
+  "old": "    if plan.root_assisted:\n        _chown_tree(plan.run_dir, plan.target_uid, plan.target_gid)\n    _fsync_dir(plan.run_dir)",
+  "new": "    _fsync_dir(plan.run_dir)",
+  "test": "tests/p0/test_migrate_accept.py::TestRunFilesOwned::test_run_files_chowned"
+ },
+ {
   "id": "M-7.4-d",
   "what": "content_digest не сравнивается после копирования",
   "file": "massaru/migrate.py",
@@ -464,6 +528,14 @@
   "test": "tests/p0/test_migrate.py::TestNormalization::test_permissions_normalized_unprivileged"
  },
  {
+  "id": "M-7.4-g",
+  "what": "пропустить финальный пересчёт на опубликованном дереве",
+  "file": "massaru/migrate.py",
+  "old": "    report.target_digest = content_digest(plan.target_var)\n    if report.target_digest != report.content_digest_source:",
+  "new": "    report.target_digest = report.content_digest_source\n    if report.target_digest != report.content_digest_source:",
+  "test": "tests/p0/test_migrate_accept.py::TestFinalDigestOnPublishedTree::test_tamper_between_rename_and_report"
+ },
+ {
   "id": "M-7.4-h",
   "what": "права не нормализуются в миграции (0644 остаётся)",
   "file": "massaru/migrate.py",
@@ -477,7 +549,7 @@
   "file": "massaru/migrate.py",
   "old": "    bad = _foreign_uids(src, allowed)\n    if bad:",
   "new": "    bad = []\n    if bad:",
-  "test": "tests/p0/test_migrate_modes.py::TestForeignUid::test_foreign_uid_rejected_without_adopt"
+  "test": "tests/p0/test_migrate_accept.py::TestForeignUidWithoutRoot::test_third_uid_rejected"
  },
  {
   "id": "M-7.4-j",
@@ -485,7 +557,7 @@
   "file": "massaru/migrate.py",
   "old": "    allowed.update(plan.adopt_uids)",
   "new": "    pass",
-  "test": "tests/p0/test_migrate_modes.py::TestForeignUid::test_foreign_uid_accepted_with_adopt"
+  "test": "tests/p0/test_migrate_accept.py::TestForeignUidWithoutRoot::test_adopt_uid_allows_third_uid"
  },
  {
   "id": "M-7.5-a",
@@ -504,12 +576,28 @@
   "test": "tests/p0/test_migrate.py::TestSymlinks::test_relative_symlink_preserved"
  },
  {
+  "id": "M-7.6-a",
+  "what": "вернуть удалённый флаг --merge → код 2 unknown flag",
+  "file": "massaru/migrate.py",
+  "old": "    p.add_argument(\"--verify-target\", action=\"store_true\")",
+  "new": "    p.add_argument(\"--verify-target\", action=\"store_true\")\n    p.add_argument(\"--merge\", action=\"store_true\")",
+  "test": "tests/p0/test_migrate_accept.py::TestMergeFlagRemoved::test_merge_flag_does_not_exist"
+ },
+ {
   "id": "M-7.7-a",
   "what": "источник удаляется после успешной миграции",
   "file": "massaru/migrate.py",
   "old": "    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
   "new": "    shutil.rmtree(plan.source_var, ignore_errors=True)\n    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
   "test": "tests/p0/test_migrate.py::TestHappyPath::test_source_untouched"
+ },
+ {
+  "id": "M-7.7-b",
+  "what": "уронить --verify-target → источник обязан остаться на месте",
+  "file": "massaru/migrate.py",
+  "old": "            raise MigrateError(\n                ExitCode.HEALTH_FAILED,\n                f\"--verify-target failed: {exc} (source is intact)\",\n            ) from exc",
+  "new": "            pass",
+  "test": "tests/p0/test_migrate_accept.py::TestVerifyTargetFailure::test_source_survives_failed_verify"
  },
  {
   "id": "M-7.8-a",
@@ -534,6 +622,78 @@
   "old": "    for code in CODE_PRIORITY:\n        if code in codes:\n            return code",
   "new": "    for code in codes:\n        return code",
   "test": "tests/p0/test_migrate_wal.py::TestCodePriority::test_invocation_beats_everything"
+ },
+ {
+  "id": "M-9.1-a",
+  "what": "добавить /var/nemeq в .j2, bin-скрипт без расширения и .yml → текстовый скан падает",
+  "file": "nqctl/cli.py",
+  "old": "\"\"\"Minimal nqctl with ``store fsck|verify|snapshot``.\"\"\"",
+  "new": "\"\"\"Minimal nqctl.\n\nDefault unit template (см. templates/nemeq.service.j2):\nExecStart=/var/nemeq/bin/nqctl\nЯрлык для .yml: path: /var/nemeq\nСкрипт без расширения: X=/var/nemeq\n\"\"\"",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_no_os_paths_in_sources"
+ },
+ {
+  "id": "M-9.1-b",
+  "what": "Path(\"/var\") / \"nemeq\" в nqctl/cli.py → AST-тест падает, регулярка молчит",
+  "file": "nqctl/cli.py",
+  "old": "def _remote(args: argparse.Namespace) -> int:",
+  "new": "_OS_VAR = __import__('pathlib').Path(\"/var\") / \"nemeq\"\n\n\ndef _remote(args: argparse.Namespace) -> int:",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_ast_no_concatenated_paths"
+ },
+ {
+  "id": "M-9.1-c",
+  "what": "добавить файл в .gitignore со строкой /var/nemeq → скан .gitignore падает",
+  "file": ".gitignore",
+  "old": "*.log",
+  "new": "*.log\n/var/nemeq/state",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_gitignore_not_hiding"
+ },
+ {
+  "id": "M-9.1-d",
+  "what": "положить в wheelhouse/*.whl модуль со строкой /var/nemeq → тест содержимого архивов падает",
+  "file": "massaru/deps.py",
+  "old": "MANIFEST_NAME = \"manifest.sha256\"",
+  "new": "MANIFEST_NAME = \"manifest.sha256\"\n\nimport zipfile as _zf\n_wh = Path(\"wheelhouse\")\n_wh.mkdir(exist_ok=True)\nwith _zf.ZipFile(_wh / \"smoke-1.0-py3-none-any.whl\", \"w\") as _z:\n    _z.writestr(\"smoke.py\", 'DEFAULT = \"/var/nemeq/apiserver\"\\n')",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_wheels_clean"
+ },
+ {
+  "id": "M-9.1-e",
+  "what": "вписать %t/nemeq в unit-шаблон → тест systemd-спецификаторов падает",
+  "file": "massaru/unit.py",
+  "old": "        \"ProtectSystem=strict\",",
+  "new": "        \"ProtectSystem=strict\",\n        \"WorkingDirectory=%t/nemeq\",",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_unit_template_no_specifier"
+ },
+ {
+  "id": "M-9.1-f",
+  "what": "положить в wheelhouse/*.whl симлинк на /etc/passwd → тест readlink падает",
+  "file": "massaru/deps.py",
+  "old": "MANIFEST_NAME = \"manifest.sha256\"",
+  "new": "MANIFEST_NAME = \"manifest.sha256\"\n\nimport zipfile as _zf\n_wh = Path(\"wheelhouse\")\n_wh.mkdir(exist_ok=True)\nwith _zf.ZipFile(_wh / \"escape-1.0-py3-none-any.whl\", \"w\") as _z:\n    _i = _zf.ZipInfo(\"passwd\")\n    _i.create_system = 3\n    _i.external_attr = (0o120777 << 16)\n    _z.writestr(_i, \"/etc/passwd\")",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_wheels_clean"
+ },
+ {
+  "id": "M-9.1-g",
+  "what": "заменить литерал на os.path.join(root, \"var\", \"nemeq\") → AST-тест падает",
+  "file": "nqctl/cli.py",
+  "old": "def _remote(args: argparse.Namespace) -> int:",
+  "new": "_OS_JOIN = __import__('os').path.join(\"root\", \"var\", \"nemeq\")\n\n\ndef _remote(args: argparse.Namespace) -> int:",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_ast_no_concatenated_paths"
+ },
+ {
+  "id": "M-9.1-h",
+  "what": "создать симлинк из $NEMEQ_HOME наружу при install → тест дерева падает",
+  "file": "massaru/install.py",
+  "old": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)",
+  "new": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)\n    (resolved.home / \"etc-passwd\").symlink_to(\"/etc/passwd\")",
+  "test": "tests/p0/test_arch_paths.py::TestHomeTreeSymlinks::test_install_creates_no_escaping_symlink"
+ },
+ {
+  "id": "M-9.1-i",
+  "what": "удалить строку /var/lib/nemeq из таблицы §4.1 (и из кода) → тест соответствия падает",
+  "file": "massaru/legacy.py",
+  "old": "    Mapping(f\"{VAR_LIB_NEMEQ}\", \"store\", \"rename\",\n            \"альтернативный legacy-путь стора\"),",
+  "new": "",
+  "test": "tests/p0/test_arch_paths.py::TestLegacyTable::test_all_legacy_paths_in_code_table"
  },
  {
   "id": "M-9.10-a",
@@ -590,5 +750,93 @@
   "old": "    if not spec:\n        print(f\"{spec_path.name}: список мутантов пуст — прогон невозможен (код 2)\")\n        return 2",
   "new": "    if False:\n        pass",
   "test": "tests/p0/test_tools_selftest.py::TestCoverageDetectsProblems::test_empty_spec_is_error_not_success"
+ },
+ {
+  "id": "M-9.2-a",
+  "what": "подменить NEMEQ_HOME второго инстанса на первый → сравнение inode падает",
+  "file": "massaru/layout.py",
+  "old": "    return home / \"instances\" / instance",
+  "new": "    return home / \"instances\" / \"alpha\"",
+  "test": "tests/p0/test_accept_v06.py::TestInstanceIsolation::test_collapsed_homes_share_inode"
+ },
+ {
+  "id": "M-9.3-a",
+  "what": "health не различает подменённый instance_id → non-200 с кодом 5",
+  "file": "apiserver/server.py",
+  "old": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = [k for k in required if not identity.get(k)]",
+  "new": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = []",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_identity_mismatch_is_code_5_not_just_down"
+ },
+ {
+  "id": "M-9.3-b",
+  "what": "health отдаёт rev на единицу меньший → сравнение до/после падает",
+  "file": "apiserver/server.py",
+  "old": "        \"rev\": int(store_status.get(\"rev\", 0)),",
+  "new": "        \"rev\": int(store_status.get(\"rev\", 0)) - 1,",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_rev_never_decreases"
+ },
+ {
+  "id": "M-9.4-a",
+  "what": "подменить байт в atoms → digest расходится, миграция даёт код 10",
+  "file": "massaru/migrate.py",
+  "old": "    if report.content_digest_source != report.content_digest_target:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})",
+  "new": "    if False:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})",
+  "test": "tests/p0/test_accept_v06.py::TestDigestIntegrity::test_migration_digest_mismatch_is_code_10"
+ },
+ {
+  "id": "M-9.5-a",
+  "what": "записать в СУЩЕСТВУЮЩИЙ файл вне HOME → тест чистоты падает (фильтр по O_CREAT это пропускал)",
+  "file": "massaru/install.py",
+  "old": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)",
+  "new": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)\n    _outside = Path(os.environ.get(\"TMPDIR\", \"/tmp\")) / \"nemeq-outside-write.probe\"\n    _outside.write_text(\"probe\")\n    if _outside.exists():\n        _outside.write_text(\"probe2\")",
+  "test": "tests/p0/test_accept_v06.py::TestNoWritesOutsideHome::test_install_writes_nothing_outside_home"
+ },
+ {
+  "id": "M-9.6-a",
+  "what": "добавить urllib.request в install → тест отсутствия сети падает",
+  "file": "massaru/install.py",
+  "old": "import ctypes.util\nimport json",
+  "new": "import ctypes.util\nimport json\nimport urllib.request",
+  "test": "tests/p0/test_accept_v06.py::TestOfflineInstall::test_no_network_import_at_install"
+ },
+ {
+  "id": "M-9.7-a",
+  "what": "убрать проверку непустого target → тест «target непуст» падает",
+  "file": "massaru/migrate.py",
+  "old": "    if tgt.exists() and any(tgt.iterdir()):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION, f\"target is not empty: {tgt}\"\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_accept_v06.py::TestNegativeScenarios::test_target_not_empty_is_code_2"
+ },
+ {
+  "id": "M-9.8-a",
+  "what": "сделать install неидемпотентным (перегенерировать home_id) → тест (2) падает",
+  "file": "massaru/instance.py",
+  "old": "    existing = _read_toml_simple(home_file)\n    if existing.get(\"home_id\"):\n        return str(existing[\"home_id\"])",
+  "new": "    pass",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_repeat_install_keeps_rev_and_ids"
+ },
+ {
+  "id": "M-9.8-b",
+  "what": "сменить UID одного файла → тест (8) падает",
+  "file": "massaru/instance.py",
+  "old": "    os.chmod(state_file, 0o600)\n    return info",
+  "new": "    os.chmod(state_file, 0o600)\n    os.lchown(state_file, os.getuid() + 1, os.getgid())\n    return info",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_all_files_owned_by_owner"
+ },
+ {
+  "id": "M-9.8-c",
+  "what": "смонтировать NFS в фикстуре → тест (6) падает",
+  "file": "massaru/install.py",
+  "old": "    fs_ok = fs not in UNSAFE_FS",
+  "new": "    fs_ok = True",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_nfs_reports_code_8"
+ },
+ {
+  "id": "M-9.9-a",
+  "what": "перенаправить симлинк var на instances/alpha/var → doctor падает до записи",
+  "file": "massaru/doctor.py",
+  "old": "    ok = target.rstrip(\"/\") == expected\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "new": "    ok = True\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "test": "tests/p0/test_accept_v06.py::TestVarSymlinkNotAuthoritative::test_mutant_redirect_to_alpha_fails_doctor"
  }
 ]

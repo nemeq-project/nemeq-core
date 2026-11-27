@@ -79,5 +79,13 @@
   "old": "        return {\"check\": self.check, \"ok\": self.ok,\n                \"detail\": self.detail, \"severity\": self.severity}",
   "new": "        return {}",
   "test": "tests/p0/test_doctor.py::TestBasics::test_report_is_json_serialisable"
+ },
+ {
+  "id": "M-4.4-a",
+  "what": "var/tmp на другой ФС → doctor падает (EXDEV на rename)",
+  "file": "massaru/doctor.py",
+  "old": "        same = tmp_dev == epishu_dev",
+  "new": "        same = True",
+  "test": "tests/p0/test_doctor.py::TestFilesystems::test_cross_device_tmp_flagged"
  }
 ]

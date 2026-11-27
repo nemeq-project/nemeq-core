@@ -227,6 +227,14 @@ def create(resolved: Resolved) -> InstanceInfo:
     (paths["var"] / "tmp").mkdir(parents=True, exist_ok=True)
     os.chmod(paths["var"] / "tmp", 0o700)
 
+    # Раскладка §4: mutable-корень содержит store/, epishu/, state/, data/,
+    # tmp/. Раньше epishu/state/data создавались лениво, из-за чего проверка
+    # §4.4 («var/tmp и var/epishu на одной ФС») после install не срабатывала
+    # вовсе — она видела «not created yet» и всегда была зелёной.
+    for name in ("epishu", "state", "data"):
+        (paths["var"] / name).mkdir(parents=True, exist_ok=True)
+        os.chmod(paths["var"] / name, 0o700)
+
     cfg = paths["root"] / "config"
     cfg.mkdir(parents=True, exist_ok=True)
     os.chmod(cfg, 0o700)

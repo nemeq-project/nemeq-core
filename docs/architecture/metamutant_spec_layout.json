@@ -54,5 +54,13 @@
   "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
   "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return Path(os.path.realpath(store)) / f\"{digest}.lock\"",
   "test": "tests/p0/test_locks.py::TestLockLocation::test_lock_outside_store"
+ },
+ {
+  "id": "M-4.8-a",
+  "what": "добавить overlay-монтирование в run/ → архитектурный тест §4.8 падает",
+  "file": "massaru/runtime_state.py",
+  "old": "def runtime_path(resolved: Resolved) -> Path:\n    return run_dir(resolved.home, resolved.instance) / RUNTIME_FILE",
+  "new": "def runtime_path(resolved: Resolved) -> Path:\n    os.mount('overlay', str(run_dir(resolved.home, resolved.instance)), 'overlay', 0, 'lowerdir=/tmp')\n    return run_dir(resolved.home, resolved.instance) / RUNTIME_FILE",
+  "test": "tests/p0/test_arch_paths.py::TestRunWithoutOverlay::test_no_mount_calls_in_sources"
  }
 ]

@@ -60,15 +60,33 @@ class TestPermissions:
         rep = run_doctor(r)
         assert any(f.check == "perm:var" and not f.ok for f in rep.findings)
 
-    def test_owner_checked(self, tmp_path):
-        # M-4.7-b: чужой UID не обнаруживается — тест падает
+    def test_owner_checked(self, tmp_path, monkeypatch):
+        """M-4.7-b: чужой UID обнаруживается.
+
+        Раньше тест скипался без root и был вакуумным ровно в обязательном
+        режиме §9.8. Здесь владелец подменяется в `os.lstat`: проверяется сама
+        логика сравнения, а не право делать `chown`.
+        """
         r = setUp_ok(tmp_path)
         victim = r.var / "store"
-        if os.geteuid() != 0:
-            pytest.skip("смена владельца требует root")
-        os.chown(victim, 1, 1)
+        real = os.lstat
+        victim_path = str(victim)
+
+        def fake(path, *a, **kw):
+            st = real(path, *a, **kw)
+            # Сравнение БЕЗ realpath: realpath сам вызывает lstat, и подмена
+            # ушла бы в бесконечную рекурсию.
+            if str(path) == victim_path:
+                values = list(st)
+                values[4] = os.geteuid() + 1
+                return os.stat_result(values)
+            return st
+
+        monkeypatch.setattr(os, "lstat", fake)
         rep = run_doctor(r)
-        assert any(f.check == "perm:owner" and not f.ok for f in rep.findings)
+        assert any(f.check == "perm:owner" and not f.ok for f in rep.findings), (
+            "чужой владелец не обнаружен"
+        )
 
 
 class TestFilesystems:
@@ -76,6 +94,41 @@ class TestFilesystems:
         r = setUp_ok(tmp_path)
         rep = run_doctor(r)
         assert any(f.check == "fs:same_device" for f in rep.findings)
+
+    def test_cross_device_tmp_flagged(self, tmp_path, monkeypatch):
+        """M-4.4-a: var/tmp на другой ФС → doctor падает.
+
+        Смонтировать отдельную ФС в контейнере нельзя (нет CAP_SYS_ADMIN),
+        поэтому расхождение st_dev вводится подменой `_st_dev` — проверяется
+        сама логика сравнения, а не право монтировать.
+        """
+        import massaru.doctor as doc
+
+        r = setUp_ok(tmp_path)
+        tmp_dir = r.var / "tmp"
+        epishu = r.var / "epishu"
+        tmp_path_real = str(tmp_dir)
+
+        def fake_st_dev(path):
+            if str(path) == tmp_path_real:
+                return 900001  # «другая ФС»
+            return 900000
+
+        monkeypatch.setattr(doc, "_st_dev", fake_st_dev)
+        rep = run_doctor(r)
+        finding = next(f for f in rep.findings if f.check == "fs:same_device")
+        assert not finding.ok, "расхождение устройств не обнаружено"
+        assert rep.ok is False
+
+    def test_same_device_not_flagged(self, tmp_path, monkeypatch):
+        """Обратная сторона: одинаковые st_dev не дают ложного отказа."""
+        import massaru.doctor as doc
+
+        r = setUp_ok(tmp_path)
+        monkeypatch.setattr(doc, "_st_dev", lambda path: 900000)
+        rep = run_doctor(r)
+        finding = next(f for f in rep.findings if f.check == "fs:same_device")
+        assert finding.ok, f"ложный отказ: {finding.detail}"
 
 
 class TestSocketPath:

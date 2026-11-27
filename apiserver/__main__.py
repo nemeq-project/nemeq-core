@@ -33,16 +33,46 @@ def resolve_store(args: argparse.Namespace) -> Path:
     return resolve_all().store
 
 
+def identity_snapshot() -> tuple[dict, dict]:
+    """Снимок идентичности и состояния стора для `/healthz` (§9.3).
+
+    Читается ОДИН раз при старте: `/health` — инвариант живого процесса, а не
+    перечитывание файлов на каждый запрос (§6.1). Отсутствие `instance.toml`
+    — штатный режим «сервер без инстанса»: тогда health отдаёт минимум,
+    а не падает на старте.
+    """
+    identity: dict = {}
+    status: dict = {"rev": 0, "last_hash": "", "fsck": "clean", "sandbox": {}}
+    try:
+        from massaru.instance import load
+        from massaru.layout import resolve_all
+
+        resolved = resolve_all()
+        info = load(resolved)
+        identity = {
+            "instance": info.name,
+            "home_id": info.home_id,
+            "store_id": info.store_id,
+            "instance_id": info.instance_id,
+        }
+    except Exception:  # noqa: BLE001 - сервер обязан подняться и без инстанса
+        pass
+    return identity, status
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.version:
         print("nemeq-apiserver 0.1.0")
         return 0
-    store = Store(resolve_store(args))
+    store_path = resolve_store(args)
+    store = Store(store_path)
     api = Api(store, lambda: store.list("grants/")[0])
+    identity, status = identity_snapshot()
     try:
-        serve(api, host=args.host, port=args.port, openapi=build_openapi())
+        serve(api, host=args.host, port=args.port, openapi=build_openapi(),
+              identity=identity, store_status=status)
     finally:
         store.close()
     return 0

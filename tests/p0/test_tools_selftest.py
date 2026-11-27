@@ -115,10 +115,24 @@ class TestCoverageDetectsProblems:
         assert "не существует" in out or "does_not_exist" in out
 
     def test_empty_spec_is_error_not_success(self, tmp_path):
-        """M-9.10-g: пустой список мутантов → код 2, а не 0."""
+        """M-9.10-g: пустой список мутантов → код 2, а не 0.
+
+        --root берём пустой каталог, а не REPO. С REPO мутация «пропустить
+        проверку» уводит прогон на ВСЕ мутанты проекта: тест падает по
+        таймауту, а не потому, что увидел код 0. Таймаут маскирует смысл —
+        проверка должна быть быстрой и однозначной.
+        """
+        empty_root = tmp_path / "empty_root"
+        empty_root.mkdir()
         code, out = run(META, "--spec", str(self._spec(tmp_path, [])),
-                        "--root", str(REPO))
+                        "--root", str(empty_root))
+        # Кода 2 недостаточно: его же отдаёт и «тесты не запускаются» при
+        # мутации, то есть проверка не различает причины. Требуем именно
+        # сообщение про пустой список.
         assert code == 2, f"пустой spec дал код {code}: {out[-300:]}"
+        assert "список мутантов пуст" in out, (
+            f"код 2 по другой причине — проверка не различает: {out[-300:]}"
+        )
 
 
 class TestToolsAreWired:

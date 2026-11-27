@@ -104,18 +104,34 @@ def check_permissions(resolved: Resolved, rep: DoctorReport) -> None:
              "; ".join(wrong[:3]) if wrong else f"all files owned by uid {expecting}")
 
 
+def _st_dev(path: Path) -> int:
+    """Устройство, на котором лежит путь.
+
+    Отдельная функция, а не инлайн `os.stat`: тест §4.4 обязан уметь показать
+    расхождение ФС без `mount` (в контейнере без CAP_SYS_ADMIN его нет).
+    """
+    return os.stat(path).st_dev
+
+
 def check_filesystems(resolved: Resolved, rep: DoctorReport) -> None:
-    """§4.4: var/tmp и var/epishu на одном устройстве."""
+    """§4.4: var/tmp и var/epishu на одном устройстве.
+
+    Разные устройства означают `EXDEV` на `rename` из staging в стор. Проверка
+    идёт по `st_dev`, а не по типу ФС: тип не различает две точки монтирования
+    одного типа.
+    """
     tmp = resolved.var / "tmp"
     epishu = resolved.var / "epishu"
     if tmp.exists() and epishu.exists():
         try:
-            same = os.stat(tmp).st_dev == os.stat(epishu).st_dev
+            tmp_dev = _st_dev(tmp)
+            epishu_dev = _st_dev(epishu)
         except OSError as exc:
             _add(rep, "fs:same_device", False, str(exc))
             return
+        same = tmp_dev == epishu_dev
         _add(rep, "fs:same_device", same,
-             f"tmp={os.stat(tmp).st_dev} epishu={os.stat(epishu).st_dev}")
+             f"tmp={tmp_dev} epishu={epishu_dev}")
     else:
         _add(rep, "fs:same_device", True, "not created yet", severity="warning")
 
@@ -127,9 +143,29 @@ def check_socket_path(resolved: Resolved, rep: DoctorReport) -> None:
     _add(rep, "path:socket_len", length <= SOCKET_PATH_LIMIT, f"{length} chars")
 
 
+def effective_quota(probe: Path, max_state_bytes: int | None) -> int:
+    """Квота, против которой проверяется место.
+
+    Явно заданная квота проверяется БУКВАЛЬНО: если она больше диска, это
+    ошибка конфигурации, а не «места хватает».
+
+    Дефолтная квота выводится из диска (`min(DEFAULT, total // 4)`): жёсткие
+    10 GiB в дефолте делали `doctor` вечно красным на машине с диском 7 GiB,
+    хотя установка требует считанные мегабайты. Из-за этого §8.8.7
+    («doctor --json как артефакт») не выполнялся ни на одном обычном хосте.
+    """
+    if max_state_bytes is not None:
+        return int(max_state_bytes)
+    try:
+        total = os.statvfs(str(probe)).f_blocks * os.statvfs(str(probe)).f_frsize
+    except OSError:
+        return DEFAULT_MAX_STATE_BYTES
+    return int(min(DEFAULT_MAX_STATE_BYTES, max(total // 4, 64 * 1024 ** 2)))
+
+
 def check_disk(resolved: Resolved, rep: DoctorReport,
-               max_state_bytes: int = DEFAULT_MAX_STATE_BYTES) -> None:
-    """§4.7: свободное место >= 2 × max_state_bytes."""
+               max_state_bytes: int | None = None) -> None:
+    """§4.7: свободное место под квоту `max_state_bytes`."""
     probe = resolved.home
     while not probe.exists() and probe != probe.parent:
         probe = probe.parent
@@ -139,7 +175,8 @@ def check_disk(resolved: Resolved, rep: DoctorReport,
     except OSError as exc:
         _add(rep, "disk:space", False, str(exc))
         return
-    need = 2 * max_state_bytes
+    quota = effective_quota(probe, max_state_bytes)
+    need = 2 * quota
     _add(rep, "disk:space", free >= need,
          f"{free // (1024**2)} MiB free, need {need // (1024**2)} MiB")
 
@@ -214,7 +251,7 @@ def check_lock(resolved: Resolved, rep: DoctorReport) -> None:
         _add(rep, "lock:mode", m == 0o600, f"{oct(m)}", severity="warning")
 
 
-def run_doctor(resolved: Resolved, *, max_state_bytes: int = DEFAULT_MAX_STATE_BYTES,
+def run_doctor(resolved: Resolved, *, max_state_bytes: int | None = None,
                hardened_required: bool = False) -> DoctorReport:
     """Полная диагностика. Возвращает машинно-читаемый отчёт."""
     rep = DoctorReport()
@@ -244,7 +281,7 @@ def run_cli_doctor(
     instance: str | None = None,
     state_root: str | None = None,
     store: str | None = None,
-    max_state_bytes: int = DEFAULT_MAX_STATE_BYTES,
+    max_state_bytes: int | None = None,
     hardened: bool = False,
 ) -> tuple[int, dict]:
     """Слой для `nqctl doctor`."""

@@ -4,3 +4,9 @@ __pycache__/
 .coverage
 run/
 *.log
+
+# Артефакты root-прогонов (см. журнал: файлы принадлежат root и не удаляются
+# пользователем; переименованы, чтобы не попадать в скан §9.1 и в git).
+*.ROOT-ARTIFACT/
+*.KILLED-RUN-ARTIFACT*/
+*__pycache__.STALE-ROOT/

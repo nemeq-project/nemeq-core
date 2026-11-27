@@ -42,25 +42,33 @@ ROOT = os.geteuid() == 0
 
 
 class TestRootAssistedFlag:
-    def test_root_without_flag_rejected(self, tmp_path):
+    def test_root_without_flag_rejected(self, tmp_path, monkeypatch):
         """M-7.4-a: запуск от root без --root-assisted → код 2.
 
         Привилегия не применяется молча: root обязан подтвердить режим.
+        Раньше тест скипался без root и был вакуумным ровно в обязательном
+        режиме §9.8. Теперь euid подменяется — проверяется сама ветка.
         """
-        if not ROOT:
-            pytest.skip("тест имеет смысл только под root")
+        import massaru.migrate as m
+
         make_source(tmp_path)
+        monkeypatch.setattr(m.os, "geteuid", lambda: 0)
         plan = plan_for(tmp_path, root_assisted=False)
         with pytest.raises(MigrateError) as exc:
             migrate(plan)
         assert exc.value.code == ExitCode.BAD_INVOCATION
         assert "root-assisted" in exc.value.message
 
-    def test_root_with_flag_proceeds(self, tmp_path):
-        if not ROOT:
-            pytest.skip("тест имеет смысл только под root")
+    def test_root_with_flag_proceeds(self, tmp_path, monkeypatch):
+        """С флагом та же ветка не срабатывает — миграция проходит."""
+        import massaru.migrate as m
+
         make_source(tmp_path)
-        rep = migrate(plan_for(tmp_path, root_assisted=True))
+        real_uid = os.geteuid()
+        monkeypatch.setattr(m.os, "geteuid", lambda: 0)
+        # target_uid задаётся явно: подмена euid глобальна (m.os — это os),
+        # иначе цель стала бы uid 0, а файлы источника — нет.
+        rep = migrate(plan_for(tmp_path, root_assisted=True, target_uid=real_uid))
         assert rep.state == "reported"
 
 

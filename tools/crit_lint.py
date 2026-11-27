@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # Глаголы, которыми мутант описывает ДЕЙСТВИЕ над кодом/данными.
@@ -129,17 +130,18 @@ def selftest() -> int:
         ),
     ]
     failed = 0
-    for name, text, should_fail in cases:
-        tmp = Path("/tmp") / "crit_lint_fixture.md"
-        tmp.write_text(text, encoding="utf-8")
-        problems = check_document(tmp)
-        got_fail = bool(problems)
-        ok = got_fail == should_fail
-        print(f"{'OK  ' if ok else 'FAIL'} {name}: проблем={len(problems)}")
-        if not ok:
-            failed += 1
-            for p in problems:
-                print("      ", p)
+    with tempfile.TemporaryDirectory(prefix="crit_lint_selftest-") as workdir:
+        tmp = Path(workdir) / "fixture.md"
+        for name, text, should_fail in cases:
+            tmp.write_text(text, encoding="utf-8")
+            problems = check_document(tmp)
+            got_fail = bool(problems)
+            ok = got_fail == should_fail
+            print(f"{'OK  ' if ok else 'FAIL'} {name}: проблем={len(problems)}")
+            if not ok:
+                failed += 1
+                for p in problems:
+                    print("      ", p)
     print(f"\nselftest: {'PASS' if failed == 0 else 'FAIL'} ({len(cases)-failed}/{len(cases)})")
     return 0 if failed == 0 else 1
 

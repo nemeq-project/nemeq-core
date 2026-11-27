@@ -78,6 +78,12 @@ def _entry_bytes(relpath: bytes, kind: int, body: bytes) -> bytes:
     return _u64be(len(relpath)) + relpath + bytes([kind]) + body
 
 
+# Обход дерева вынесен в модульную переменную, чтобы тест стабильности
+# (M-7.3-d) мог подать обратный порядок обхода: канонический digest обязан
+# зависеть только от множества записей, а не от порядка их выдачи ФС.
+_walk_fn = os.walk
+
+
 def _walk(root: Path) -> list[tuple[bytes, int, bytes, str]]:
     """Собрать записи: (relpath_bytes, kind, body, relpath_str).
 
@@ -87,7 +93,7 @@ def _walk(root: Path) -> list[tuple[bytes, int, bytes, str]]:
     entries: list[tuple[bytes, int, bytes, str]] = []
     empty_dirs: list[str] = []
 
-    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+    for dirpath, dirnames, filenames in _walk_fn(root, topdown=True):
         here = Path(dirpath)
 
         # Исключаемые каталоги не обходятся вовсе.

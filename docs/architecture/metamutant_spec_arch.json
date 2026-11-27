@@ -1,0 +1,162 @@
+[
+ {
+  "id": "M-9.1-a",
+  "what": "добавить /var/nemeq в .j2, bin-скрипт без расширения и .yml → текстовый скан падает",
+  "file": "nqctl/cli.py",
+  "old": "\"\"\"Minimal nqctl with ``store fsck|verify|snapshot``.\"\"\"",
+  "new": "\"\"\"Minimal nqctl.\n\nDefault unit template (см. templates/nemeq.service.j2):\nExecStart=/var/nemeq/bin/nqctl\nЯрлык для .yml: path: /var/nemeq\nСкрипт без расширения: X=/var/nemeq\n\"\"\"",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_no_os_paths_in_sources"
+ },
+ {
+  "id": "M-9.1-b",
+  "what": "Path(\"/var\") / \"nemeq\" в nqctl/cli.py → AST-тест падает, регулярка молчит",
+  "file": "nqctl/cli.py",
+  "old": "def _remote(args: argparse.Namespace) -> int:",
+  "new": "_OS_VAR = __import__('pathlib').Path(\"/var\") / \"nemeq\"\n\n\ndef _remote(args: argparse.Namespace) -> int:",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_ast_no_concatenated_paths"
+ },
+ {
+  "id": "M-9.1-c",
+  "what": "добавить файл в .gitignore со строкой /var/nemeq → скан .gitignore падает",
+  "file": ".gitignore",
+  "old": "*.log",
+  "new": "*.log\n/var/nemeq/state",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_gitignore_not_hiding"
+ },
+ {
+  "id": "M-9.1-e",
+  "what": "вписать %t/nemeq в unit-шаблон → тест systemd-спецификаторов падает",
+  "file": "massaru/unit.py",
+  "old": "        \"ProtectSystem=strict\",",
+  "new": "        \"ProtectSystem=strict\",\n        \"WorkingDirectory=%t/nemeq\",",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_unit_template_no_specifier"
+ },
+ {
+  "id": "M-9.1-g",
+  "what": "заменить литерал на os.path.join(root, \"var\", \"nemeq\") → AST-тест падает",
+  "file": "nqctl/cli.py",
+  "old": "def _remote(args: argparse.Namespace) -> int:",
+  "new": "_OS_JOIN = __import__('os').path.join(\"root\", \"var\", \"nemeq\")\n\n\ndef _remote(args: argparse.Namespace) -> int:",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_ast_no_concatenated_paths"
+ },
+ {
+  "id": "M-9.1-h",
+  "what": "создать симлинк из $NEMEQ_HOME наружу при install → тест дерева падает",
+  "file": "massaru/install.py",
+  "old": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)",
+  "new": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)\n    (resolved.home / \"etc-passwd\").symlink_to(\"/etc/passwd\")",
+  "test": "tests/p0/test_arch_paths.py::TestHomeTreeSymlinks::test_install_creates_no_escaping_symlink"
+ },
+ {
+  "id": "M-9.1-i",
+  "what": "удалить строку /var/lib/nemeq из таблицы §4.1 (и из кода) → тест соответствия падает",
+  "file": "massaru/legacy.py",
+  "old": "    Mapping(f\"{VAR_LIB_NEMEQ}\", \"store\", \"rename\",\n            \"альтернативный legacy-путь стора\"),",
+  "new": "",
+  "test": "tests/p0/test_arch_paths.py::TestLegacyTable::test_all_legacy_paths_in_code_table"
+ },
+ {
+  "id": "M-9.1-d",
+  "what": "положить в wheelhouse/*.whl модуль со строкой /var/nemeq → тест содержимого архивов падает",
+  "file": "massaru/deps.py",
+  "old": "MANIFEST_NAME = \"manifest.sha256\"",
+  "new": "MANIFEST_NAME = \"manifest.sha256\"\n\nimport zipfile as _zf\n_wh = Path(\"wheelhouse\")\n_wh.mkdir(exist_ok=True)\nwith _zf.ZipFile(_wh / \"smoke-1.0-py3-none-any.whl\", \"w\") as _z:\n    _z.writestr(\"smoke.py\", 'DEFAULT = \"/var/nemeq/apiserver\"\\n')",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_wheels_clean"
+ },
+ {
+  "id": "M-9.1-f",
+  "what": "положить в wheelhouse/*.whl симлинк на /etc/passwd → тест readlink падает",
+  "file": "massaru/deps.py",
+  "old": "MANIFEST_NAME = \"manifest.sha256\"",
+  "new": "MANIFEST_NAME = \"manifest.sha256\"\n\nimport zipfile as _zf\n_wh = Path(\"wheelhouse\")\n_wh.mkdir(exist_ok=True)\nwith _zf.ZipFile(_wh / \"escape-1.0-py3-none-any.whl\", \"w\") as _z:\n    _i = _zf.ZipInfo(\"passwd\")\n    _i.create_system = 3\n    _i.external_attr = (0o120777 << 16)\n    _z.writestr(_i, \"/etc/passwd\")",
+  "test": "tests/p0/test_arch_paths.py::TestNoOsPaths::test_wheels_clean"
+ },
+ {
+  "id": "M-9.2-a",
+  "what": "подменить NEMEQ_HOME второго инстанса на первый → сравнение inode падает",
+  "file": "massaru/layout.py",
+  "old": "    return home / \"instances\" / instance",
+  "new": "    return home / \"instances\" / \"alpha\"",
+  "test": "tests/p0/test_accept_v06.py::TestInstanceIsolation::test_collapsed_homes_share_inode"
+ },
+ {
+  "id": "M-9.3-a",
+  "what": "health не различает подменённый instance_id → non-200 с кодом 5",
+  "file": "apiserver/server.py",
+  "old": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = [k for k in required if not identity.get(k)]",
+  "new": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = []",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_identity_mismatch_is_code_5_not_just_down"
+ },
+ {
+  "id": "M-9.3-b",
+  "what": "health отдаёт rev на единицу меньший → сравнение до/после падает",
+  "file": "apiserver/server.py",
+  "old": "        \"rev\": int(store_status.get(\"rev\", 0)),",
+  "new": "        \"rev\": int(store_status.get(\"rev\", 0)) - 1,",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_rev_never_decreases"
+ },
+ {
+  "id": "M-9.4-a",
+  "what": "подменить байт в atoms → digest расходится, миграция даёт код 10",
+  "file": "massaru/migrate.py",
+  "old": "    if report.content_digest_source != report.content_digest_target:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})",
+  "new": "    if False:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})",
+  "test": "tests/p0/test_accept_v06.py::TestDigestIntegrity::test_migration_digest_mismatch_is_code_10"
+ },
+ {
+  "id": "M-9.6-a",
+  "what": "добавить urllib.request в install → тест отсутствия сети падает",
+  "file": "massaru/install.py",
+  "old": "import ctypes.util\nimport json",
+  "new": "import ctypes.util\nimport json\nimport urllib.request",
+  "test": "tests/p0/test_accept_v06.py::TestOfflineInstall::test_no_network_import_at_install"
+ },
+ {
+  "id": "M-9.7-a",
+  "what": "убрать проверку непустого target → тест «target непуст» падает",
+  "file": "massaru/migrate.py",
+  "old": "    if tgt.exists() and any(tgt.iterdir()):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION, f\"target is not empty: {tgt}\"\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_accept_v06.py::TestNegativeScenarios::test_target_not_empty_is_code_2"
+ },
+ {
+  "id": "M-9.8-a",
+  "what": "сделать install неидемпотентным (перегенерировать home_id) → тест (2) падает",
+  "file": "massaru/instance.py",
+  "old": "    existing = _read_toml_simple(home_file)\n    if existing.get(\"home_id\"):\n        return str(existing[\"home_id\"])",
+  "new": "    pass",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_repeat_install_keeps_rev_and_ids"
+ },
+ {
+  "id": "M-9.8-b",
+  "what": "сменить UID одного файла → тест (8) падает",
+  "file": "massaru/instance.py",
+  "old": "    os.chmod(state_file, 0o600)\n    return info",
+  "new": "    os.chmod(state_file, 0o600)\n    os.lchown(state_file, os.getuid() + 1, os.getgid())\n    return info",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_all_files_owned_by_owner"
+ },
+ {
+  "id": "M-9.8-c",
+  "what": "смонтировать NFS в фикстуре → тест (6) падает",
+  "file": "massaru/install.py",
+  "old": "    fs_ok = fs not in UNSAFE_FS",
+  "new": "    fs_ok = True",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_nfs_reports_code_8"
+ },
+ {
+  "id": "M-9.9-a",
+  "what": "перенаправить симлинк var на instances/alpha/var → doctor падает до записи",
+  "file": "massaru/doctor.py",
+  "old": "    ok = target.rstrip(\"/\") == expected\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "new": "    ok = True\n    _add(rep, \"symlink:var\", ok, f\"{target} (expected {expected})\")",
+  "test": "tests/p0/test_accept_v06.py::TestVarSymlinkNotAuthoritative::test_mutant_redirect_to_alpha_fails_doctor"
+ },
+ {
+  "id": "M-9.5-a",
+  "what": "записать в СУЩЕСТВУЮЩИЙ файл вне HOME → тест чистоты падает (фильтр по O_CREAT это пропускал)",
+  "file": "massaru/install.py",
+  "old": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)",
+  "new": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)\n    _outside = Path(os.environ.get(\"TMPDIR\", \"/tmp\")) / \"nemeq-outside-write.probe\"\n    _outside.write_text(\"probe\")\n    if _outside.exists():\n        _outside.write_text(\"probe2\")",
+  "test": "tests/p0/test_accept_v06.py::TestNoWritesOutsideHome::test_install_writes_nothing_outside_home"
+ }
+]

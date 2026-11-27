@@ -20,6 +20,7 @@ State machine с восстановлением после `kill -9` на люб
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
@@ -251,6 +252,38 @@ class MigratePlan:
     root_assisted: bool = False
     adopt_uids: list[int] = field(default_factory=list)
     allow_outside_home: bool = False
+    verify_target: bool = False
+    instance: str = ""
+    home: Path | None = None
+
+
+def _service_lock_held(var: Path, store: Path, home: Path | None = None) -> bool:
+    """Держится ли лок стора живым сервисом (§7.1: сервис обязан быть остановлен).
+
+    Проверка НЕ создаёт каталогов и не берёт лок надолго: открывается только
+    уже существующий lock-файл. Если файла нет — владельца нет по определению.
+
+    `home` обязателен: путь лока зависит от того, внутренний стор или внешний
+    (§6.4). При `home=None` внешний стор получил бы лок в `<var>/locks/`,
+    тогда как сервис держит его в `<home>/locks/` — и живой сервис остался бы
+    незамеченным.
+    """
+    lp = lock_path(var, store, home)
+    if not lp.is_file():
+        return False
+    try:
+        fd = os.open(str(lp), os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
 
 
 def _preflight(plan: MigratePlan) -> None:
@@ -259,6 +292,17 @@ def _preflight(plan: MigratePlan) -> None:
 
     if not src.is_dir():
         raise MigrateError(ExitCode.BAD_INVOCATION, f"source is not a directory: {src}")
+
+    # §7.1: сервис обязан быть остановлен. Флага обхода нет — иначе миграция
+    # копирует стор под живым писателем и публикует расходящееся дерево.
+    # Проверка идёт ДО создания staging: при живом сервисе в target не должно
+    # появиться ни одного файла.
+    if _service_lock_held(src, src / "store", plan.home):
+        name = f"nemeq-{plan.instance}" if plan.instance else "nemeq"
+        raise MigrateError(
+            ExitCode.BAD_INVOCATION,
+            f"service is running ({name}): stop {name} first",
+        )
 
     if tgt.exists() and any(tgt.iterdir()):
         raise MigrateError(
@@ -299,6 +343,26 @@ def _preflight(plan: MigratePlan) -> None:
         raise MigrateError(
             ExitCode.UNSUPPORTED_FS, "staging and target are on different filesystems"
         )
+
+
+def _verify_target(plan: MigratePlan) -> None:
+    """Read-only проверка опубликованного дерева (§11 п.3).
+
+    Ничего не пишет и не меняет `rev`: только fsck опубликованного стора и
+    сверка digest. Вызывается ПОСЛЕ публикации — падение не откатывает её и
+    не удаляет источник (§7.7).
+    """
+    if not plan.target_var.is_dir():
+        raise ValueError(f"published target is missing: {plan.target_var}")
+    if content_digest(plan.target_var) == "":
+        raise ValueError("digest of published tree is empty")
+    store_dir = plan.target_var / "store"
+    if store_dir.is_dir():
+        from .store import scan_store
+
+        scan = scan_store(store_dir, repair=False)
+        if not scan.report.ok:
+            raise ValueError("; ".join(scan.report.errors) or "store fsck failed")
 
 
 def migrate(plan: MigratePlan, *, force_restart: bool = False) -> MigrateReport:
@@ -379,8 +443,22 @@ def migrate(plan: MigratePlan, *, force_restart: bool = False) -> MigrateReport:
 
     report.metadata_digest_target = metadata_digest(staging)
 
+    return _publish(plan, report, staging)
+
+
+def _publish(plan: MigratePlan, report: MigrateReport, staging: Path) -> MigrateReport:
+    """Шаги 8–11 §7.2: intent -> rename -> published -> отчёт.
+
+    Вынесено отдельной функцией, потому что этот же хвост выполняет
+    восстановление из состояния `publishing` (M-7.2-b): прерывание между
+    шагами 8 и 9 возвращается в `verifying` и перепроверяет копию до публикации.
+    """
     # verifying -> publishing (intent записан ДО rename)
-    _write_state(plan.run_dir, {**_read_state(plan.run_dir), "state": "publishing"})
+    _write_state(plan.run_dir, {
+        **_read_state(plan.run_dir),
+        "state": "publishing",
+        "content_digest": report.content_digest_source,
+    })
     report.state = "publishing"
 
     plan.target_var.parent.mkdir(parents=True, exist_ok=True)
@@ -393,12 +471,36 @@ def migrate(plan: MigratePlan, *, force_restart: bool = False) -> MigrateReport:
     _write_state(plan.run_dir, {**_read_state(plan.run_dir), "state": "published"})
     report.state = "published"
 
+    # §7.4 п.6: ФИНАЛЬНЫЙ пересчёт на опубликованном дереве, до записи reported.
+    # Иначе подмена файла между rename и отчётом проходит незамеченной.
     report.target_digest = content_digest(plan.target_var)
     if report.target_digest != report.content_digest_source:
+        _write_state(plan.run_dir, {
+            **_read_state(plan.run_dir), "state": "failed:corrupt_publish",
+        })
         raise MigrateError(
             ExitCode.DATA_DIGEST,
             "published tree digest differs from source",
         )
+
+    # §7.4: chown распространяется и на run/migration*.json — иначе в HOME
+    # остаётся файл чужого владельца после root-assisted.
+    if plan.root_assisted:
+        _chown_tree(plan.run_dir, plan.target_uid, plan.target_gid)
+
+    # §11 п.3: --verify-target только read-only после публикации. Падение
+    # проверки не откатывает публикацию и НЕ удаляет источник (§7.7).
+    if plan.verify_target:
+        try:
+            _verify_target(plan)
+        except (OSError, ValueError) as exc:
+            _write_state(plan.run_dir, {
+                **_read_state(plan.run_dir), "state": "failed:verify_target",
+            })
+            raise MigrateError(
+                ExitCode.HEALTH_FAILED,
+                f"--verify-target failed: {exc} (source is intact)",
+            ) from exc
 
     report.source_digest = report.content_digest_source
     report.finished_at = _now()
@@ -412,6 +514,11 @@ def migrate(plan: MigratePlan, *, force_restart: bool = False) -> MigrateReport:
         json.dumps(report.__dict__, ensure_ascii=False, indent=1),
         encoding="utf-8",
     )
+    # §7.4: chown распространяется и на run/migration*.json — иначе в HOME
+    # остаётся файл чужого владельца после root-assisted. Делается ПОСЛЕ
+    # записи отчёта: иначе сам отчёт остаётся за вызывающим uid.
+    if plan.root_assisted:
+        _chown_tree(plan.run_dir, plan.target_uid, plan.target_gid)
     _fsync_dir(plan.run_dir)
     return report
 
@@ -448,7 +555,37 @@ def _resume(plan: MigratePlan, state: dict) -> MigrateReport:
             return _finish_report(plan, state)
 
         if not has_var and has_staging:
-            return migrate(plan, force_restart=True)
+            # M-7.2-b: прерывание МЕЖДУ шагами 8 и 9. Слепо публиковать нельзя:
+            # staging мог быть повреждён после записи intent. Возвращаемся в
+            # `verifying` и сверяем staging с зафиксированным манифестом.
+            _write_state(plan.run_dir, {**state, "state": "verifying"})
+            expected = state.get("content_digest") or content_digest(plan.source_var)
+            try:
+                actual = content_digest(staging)
+            except DigestError:
+                actual = ""
+            if actual != expected:
+                shutil.rmtree(staging, ignore_errors=True)
+                _write_state(plan.run_dir, {**state, "state": "failed:bad_staging"})
+                raise MigrateError(
+                    ExitCode.DATA_DIGEST,
+                    "staging digest does not match manifest: staging removed, "
+                    "publication aborted; pass --restart",
+                )
+
+            report = MigrateReport(
+                state="verifying",
+                source=str(plan.source_var),
+                target=str(plan.target_var),
+                started_at=state.get("started_at", ""),
+                mode=state.get("mode", ""),
+                target_uid=plan.target_uid,
+                target_gid=plan.target_gid,
+            )
+            report.content_digest_source = expected
+            report.content_digest_target = actual
+            _write_state(plan.run_dir, {**state, "state": "verifying"})
+            return _publish(plan, report, staging)
 
         if has_var and has_staging:
             raise MigrateError(
@@ -490,3 +627,31 @@ def _finish_report(plan: MigratePlan, state: dict) -> MigrateReport:
     _fsync_dir(plan.run_dir)
     _write_state(plan.run_dir, {**state, "state": "reported"})
     return report
+
+
+def cleanup_command(source_var: Path) -> str:
+    """Готовая команда удаления источника для `--print-cleanup-cmd` (§7.7).
+
+    Печатается, но НИКОГДА не выполняется: миграция не удаляет источник ни при
+    каком сценарии. Флага `--purge-source` не существует (удалён в v0.3), и
+    попытка его передать — код 2 от argparse, а не молчаливый успех.
+    """
+    return f"rm -rf -- {source_var}"
+
+
+def build_migrate_parser():
+    """Парсер `nqctl migrate`. Удалённые флаги обязаны отвергаться (§7.6, §7.7)."""
+    import argparse
+
+    p = argparse.ArgumentParser(prog="nqctl migrate", add_help=True)
+    p.add_argument("--from", dest="from_var", required=True)
+    p.add_argument("--home", default=None)
+    p.add_argument("--into-instance", dest="into_instance", default="default")
+    p.add_argument("--target-uid", type=int, default=os.geteuid())
+    p.add_argument("--target-gid", type=int, default=os.getegid())
+    p.add_argument("--root-assisted", action="store_true")
+    p.add_argument("--adopt-uid", action="append", default=[])
+    p.add_argument("--verify-target", action="store_true")
+    p.add_argument("--print-cleanup-cmd", action="store_true")
+    p.add_argument("--restart", action="store_true")
+    return p

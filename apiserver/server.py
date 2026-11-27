@@ -82,7 +82,8 @@ class Handler(BaseHTTPRequestHandler):
         path, _, raw_query = self.path.partition("?")
         query = parse_qs(raw_query, keep_blank_values=True)
         if path == "/healthz":
-            return self._send_json(200, {"status": "ok"})
+            code, payload = health_payload(self.server.identity, self.server.store_status)
+            return self._send_json(code, payload)
         if path == "/openapi.json":
             return self._send_json(200, self.server.openapi)
         if path == "/metrics":
@@ -155,28 +156,97 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(status, result)
 
 
+def health_payload(identity: dict | None, store_status: dict | None) -> tuple[int, dict]:
+    """`/healthz` как ИНВАРИАНТ, а не проверка доступности (§9.3).
+
+    Возвращает `{instance, home_id, store_id, instance_id, rev, last_hash,
+    fsck, sandbox}` из памяти живого процесса. Идентификаторы читаются при
+    старте (§6.1), а не на каждый запрос: подмена `instance.toml` на диске
+    отражается на СЛЕДУЮЩЕМ старте, и это нормативное поведение.
+
+    Код 5 (`IDENTITY_MISMATCH`) — когда identity не согласована. «Сервис
+    лежит» и «identity разъехалась» — разные состояния, и клиент обязан их
+    различать: недоступность не доказывает, что данные целы.
+    """
+    identity = identity or {}
+    store_status = store_status or {}
+
+    # Сервер без привязанной идентичности (например, в тестах API) сохраняет
+    # минимальный контракт `/healthz`: расширенный ответ — это ИНВАРИАНТ
+    # установленного инстанса (§9.3), а не свойство любого процесса.
+    if not identity:
+        return 200, {"status": "ok"}
+
+    required = ("instance", "home_id", "store_id", "instance_id")
+    missing = [k for k in required if not identity.get(k)]
+    if missing:
+        return 503, {
+            "status": "unavailable",
+            "code": 5,
+            "title": "IdentityMismatch",
+            "missing": missing,
+        }
+
+    revoked = bool(store_status.get("identityMismatch"))
+    if revoked:
+        return 503, {
+            "status": "identity-mismatch",
+            "code": 5,
+            "title": "IdentityMismatch",
+            "detail": store_status.get("detail", "store_id differs from instance.toml"),
+        }
+
+    fsck = store_status.get("fsck", "clean")
+    payload = {
+        "status": "ok" if fsck == "clean" else "degraded",
+        "instance": identity["instance"],
+        "home_id": identity["home_id"],
+        "store_id": identity["store_id"],
+        "instance_id": identity["instance_id"],
+        "rev": int(store_status.get("rev", 0)),
+        "last_hash": store_status.get("last_hash", ""),
+        "fsck": fsck,
+        "sandbox": store_status.get("sandbox", {}),
+    }
+    return (200 if payload["status"] == "ok" else 503), payload
+
+
 class Server(ThreadingHTTPServer):
     """HTTP-сервер с привязанным OpenAPI-документом."""
     daemon_threads: bool = True
     openapi: dict = {}
+    identity: dict = {}
+    store_status: dict = {}
 
 
 def make_server(api: Api, host: str = "127.0.0.1", port: int | None = None,
-                openapi: dict | None = None) -> Server:
-    """Создать сервер; port=None -> DEFAULT_PORT, port=0 -> эфемерный порт."""
+                openapi: dict | None = None, *,
+                identity: dict | None = None,
+                store_status: dict | None = None) -> Server:
+    """Создать сервер; port=None -> DEFAULT_PORT, port=0 -> эфемерный порт.
+
+    `identity`/`store_status` — снимок идентичности и состояния стора,
+    снятый при СТАРТЕ по протоколу «лок → чтение → решение» (§6.1). `/healthz`
+    отдаёт его как инвариант (§9.3) и не перечитывает файлы на каждый запрос.
+    """
     p = DEFAULT_PORT if port is None else port
     srv = Server((host, p), Handler)
     srv.openapi = openapi or {}
+    srv.identity = identity or {}
+    srv.store_status = store_status or {}
     Handler.api = api
     Handler.metrics = Metrics()
     return srv
 
 
 def serve(api: Api, host: str | None = None, port: int | None = None,
-          openapi: dict | None = None) -> None:
+          openapi: dict | None = None, *,
+          identity: dict | None = None,
+          store_status: dict | None = None) -> None:
     """Запустить блокирующий сервер на host/port (или NEMEQ_API_HOST/port_from_env)."""
     h = host or os.environ.get("NEMEQ_API_HOST", "127.0.0.1")
     p = port_from_env() if port is None else port
-    srv = make_server(api, host=h, port=p, openapi=openapi)
+    srv = make_server(api, host=h, port=p, openapi=openapi,
+                      identity=identity, store_status=store_status)
     print(f"listening on http://{h}:{p}", flush=True)
     srv.serve_forever()
