@@ -59,8 +59,8 @@
   "id": "M-6.4-a",
   "what": "расположение lock-файла не проверяется",
   "file": "massaru/doctor.py",
-  "old": "    inside = str(lp).startswith(str(resolved.var / \"locks\"))\n    _add(rep, \"lock:location\", inside, str(lp))",
-  "new": "    inside = True\n    _add(rep, \"lock:location\", inside, str(lp))",
+  "old": "    inside = str(lp).startswith(str(resolved.var / \"locks\")) or str(lp).startswith(str(resolved.home / \"locks\"))",
+  "new": "    inside = True",
   "test": "tests/p0/test_doctor.py::TestLock::test_lock_outside_locks_dir_flagged",
   "note": "тест проходит и при inside=True, поэтому нужен негативный кейс"
  },

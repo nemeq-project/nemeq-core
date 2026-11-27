@@ -51,8 +51,8 @@
   "id": "M-6.4-a",
   "what": "лок перенесён внутрь store/",
   "file": "massaru/layout.py",
-  "old": "    return var / \"locks\" / f\"{digest}.lock\"",
-  "new": "    return var / \"store\" / f\"{digest}.lock\"",
-  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_inside_var_locks"
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return Path(os.path.realpath(store)) / f\"{digest}.lock\"",
+  "test": "tests/p0/test_locks.py::TestLockLocation::test_lock_outside_store"
  }
 ]

@@ -206,8 +206,8 @@ def check_var_symlink(resolved: Resolved, rep: DoctorReport) -> None:
 
 def check_lock(resolved: Resolved, rep: DoctorReport) -> None:
     """§6.4: lock-файл внутри var/locks, а не в store."""
-    lp = lock_path(resolved.var, resolved.store)
-    inside = str(lp).startswith(str(resolved.var / "locks"))
+    lp = lock_path(resolved.var, resolved.store, resolved.home)
+    inside = str(lp).startswith(str(resolved.var / "locks")) or str(lp).startswith(str(resolved.home / "locks"))
     _add(rep, "lock:location", inside, str(lp))
     if lp.exists():
         m = _mode(lp)

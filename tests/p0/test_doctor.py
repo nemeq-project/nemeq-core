@@ -145,7 +145,7 @@ class TestLock:
 
         r = setUp_ok(tmp_path)
         monkeypatch.setattr(doc, "lock_path",
-                            lambda var, store: var / "store" / "lock")
+                            lambda var, store, home=None: var / "store" / "lock")
         rep = doc.run_doctor(r)
         assert any(f.check == "lock:location" and not f.ok for f in rep.findings), \
             "doctor не заметил lock вне var/locks"

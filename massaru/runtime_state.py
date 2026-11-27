@@ -187,7 +187,7 @@ def start(
     2. порт проверить ПОСЛЕ лока (пока держим лок, конкурент не займёт);
     3. runtime-файл перезаписать — он протух по определению успешного лока.
     """
-    lock_file = lock_path(resolved.var, resolved.store)
+    lock_file = lock_path(resolved.var, resolved.store, resolved.home)
     fd = _try_lock(lock_file)
     if fd is None:
         raise RuntimeError_(

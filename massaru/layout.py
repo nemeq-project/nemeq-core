@@ -242,17 +242,60 @@ def resolve_state_root(explicit: str | None = None) -> Path:
     return resolve_var(home, instance, explicit)
 
 
-def lock_path(var: Path, store: Path) -> Path:
-    """Путь лока по v0.6 §6.4: <var>/locks/<sha256(realpath(store))>.lock.
+def lock_path(var: Path, store: Path, home: Path | None = None) -> Path:
+    """Путь лока по v0.6 §6.4: <locks>/<sha256(realpath(store))>.lock.
 
     Полный хеш (не усечённый), отдельный подкаталог `locks/`:
       * `destroy` его не трогает — нет unlink-lockfile race;
       * `migrate` его не копирует — не входит в перечень;
       * внешний `--store` не зависит от прав родителя стора;
-      * путь всегда внутри `<var>`, поэтому попадает в ReadWritePaths.
+      * путь всегда внутри записываемого корня, поэтому попадает в
+        ReadWritePaths.
+
+    Каталог локов:
+
+      * стор внутри `<var>` — `<var>/locks/`, как в §6.4;
+      * внешний стор — `<home>/locks/`.
+
+    Разделение обязательно из-за конфликта двух нормативных требований §6.4:
+    «лок в `<var>/locks/`» и «один store — один lock, путь зависит только от
+    realpath(store), не от имени инстанса». При внешнем сторе у двух
+    инстансов разные `<var>`, и лок в `<var>/locks/` дал бы ДВА лока на один
+    стор — ровно то, что §6.4 запрещает. Поэтому лок внешнего стора живёт в
+    общем для home каталоге: имя по-прежнему зависит только от realpath(store).
     """
     digest = hashlib.sha256(os.path.realpath(store).encode("utf-8")).hexdigest()
-    return var / "locks" / f"{digest}.lock"
+    return _lock_base(var, store, home) / "locks" / f"{digest}.lock"
+
+
+def _lock_base(var: Path, store: Path, home: Path | None) -> Path:
+    """Каталог, внутри которого лежит `locks/`. Зависит от СТОРА, не от вызова.
+
+    Если бы база бралась от вызывающего инстанса, один и тот же стор получил бы
+    два лока: для владельца он внутренний (`<var>/store`), для соседа —
+    внешний (`--store`). Это ровно то, что §6.4 запрещает.
+
+    Правило:
+
+      * стор внутри `<home>/instances/<name>/var/` — база `<home>/instances/
+        <name>/var` (то есть `<var>/locks/`, как требует §6.4);
+      * любой другой стор (внешний `--store`) — база `<home>`, общая для всех
+        инстансов этого home.
+    """
+    if home is None:
+        return var
+
+    real_store = Path(os.path.realpath(store))
+    real_home = Path(os.path.realpath(home))
+    try:
+        rel = real_store.relative_to(real_home)
+    except ValueError:
+        return home
+
+    parts = rel.parts
+    if len(parts) >= 3 and parts[0] == "instances" and parts[2] == "var":
+        return home / "instances" / parts[1] / "var"
+    return home
 
 
 def pycache_dir(var: Path) -> Path:
@@ -322,4 +365,4 @@ def resolve_all(
         "store": "--store" if store else ("env(NEMEQ_STORE)" if environ.get("NEMEQ_STORE") else "default"),
     }
     return Resolved(home=h, instance=inst, var=v, store=s,
-                    lock=lock_path(v, s), sources=sources)
+                    lock=lock_path(v, s, h), sources=sources)

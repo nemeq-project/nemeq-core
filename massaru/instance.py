@@ -330,7 +330,7 @@ def list_instances(home: Path) -> list[InstanceInfo]:
 def status(resolved: Resolved) -> dict:
     """Статус инстанса: пути, идентичность, факт занятости лока."""
     info = load(resolved)
-    lock_file = lock_path(resolved.var, resolved.store)
+    lock_file = lock_path(resolved.var, resolved.store, resolved.home)
     fd = _try_lock(lock_file)
     running = fd is None
     pid = _read_lock_pid(lock_file) if running else None
@@ -355,7 +355,7 @@ def destroy(resolved: Resolved) -> dict:
     paths = _paths(resolved)
     load(resolved)  # инстанс обязан существовать
 
-    lock_file = lock_path(resolved.var, resolved.store)
+    lock_file = lock_path(resolved.var, resolved.store, resolved.home)
     fd = _try_lock(lock_file)
     if fd is None:
         pid = _read_lock_pid(lock_file)
@@ -410,7 +410,7 @@ def uninstall(resolved: Resolved, purge: bool = False) -> dict:
     for inst in instances:
         var = Path(inst.var)
         store = Path(inst.store)
-        lock_file = lock_path(var, store)
+        lock_file = lock_path(var, store, Path(inst.home) if hasattr(inst, "home") else None)
         fd = _try_lock(lock_file)
         if fd is None:
             pid = _read_lock_pid(lock_file)

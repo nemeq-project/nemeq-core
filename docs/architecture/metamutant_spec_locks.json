@@ -1,0 +1,43 @@
+[
+ {"id": "M-6.4-h", "what": "destroy удаляет var/locks/ (unlink-lockfile race)",
+  "file": "massaru/instance.py",
+  "old": "        for key in (\"run\", \"logs\"):",
+  "new": "        for key in (\"run\", \"logs\", \"locks\"):",
+  "test": "tests/p0/test_locks.py::TestDestroyKeepsLocks::test_destroy_keeps_lock_dir"},
+
+ {"id": "M-6.4-b", "what": "destroy делает unlink(lock) после удаления данных",
+  "file": "massaru/instance.py",
+  "old": "        for key in (\"run\", \"logs\"):\n            target = paths[key]\n            if target.exists():\n                shutil.rmtree(target, ignore_errors=False)\n                removed.append(str(target))",
+  "new": "        for key in (\"run\", \"logs\"):\n            target = paths[key]\n            if target.exists():\n                shutil.rmtree(target, ignore_errors=False)\n                removed.append(str(target))\n        lock_path(resolved.var, resolved.store, resolved.home).unlink(missing_ok=True)",
+  "test": "tests/p0/test_locks.py::TestDestroyKeepsLocks::test_destroy_does_not_unlink_lockfile"},
+
+ {"id": "M-6.4-c", "what": "два инстанса с одним --store получают разные локи",
+  "file": "massaru/layout.py",
+  "old": "    if home is None:\n        return var\n\n    real_store = Path(os.path.realpath(store))",
+  "new": "    return var\n\n    real_store = Path(os.path.realpath(store))",
+  "test": "tests/p0/test_locks.py::TestLockIdentity::test_same_store_blocks_second"},
+
+ {"id": "M-6.4-e", "what": "разные сторы получают один лок (хеш не различает пути)",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "new": "    digest = hashlib.sha256(b\"constant\").hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "test": "tests/p0/test_locks.py::TestLockIdentity::test_two_stores_both_alive"},
+
+ {"id": "M-6.4-f", "what": "лок вынесен из var/ (systemd ProtectSystem даст EROFS)",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return Path(\"/tmp\") / f\"nemeq-{digest}.lock\"",
+  "test": "tests/p0/test_locks.py::TestLockLocation::test_lock_inside_var"},
+
+ {"id": "M-6.4-g", "what": "имя лока усечено до sha256[:16]",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()[:16]\n    return _lock_base(var, store, home) / \"locks\" / f\"{digest}.lock\"",
+  "test": "tests/p0/test_locks.py::TestLockLocation::test_lock_digest_is_full_sha256"},
+
+ {"id": "M-6.4-j", "what": "uninstall --purge не проверяет живых владельцев",
+  "file": "massaru/instance.py",
+  "old": "        fd = _try_lock(lock_file)\n        if fd is None:\n            pid = _read_lock_pid(lock_file)\n            raise InstanceError(\n                EXIT_LOCK_BUSY,\n                f\"refusing purge: instance {inst.name!r} store busy \"\n                f\"(pid {pid if pid is not None else 'unknown'})\",\n            )\n        os.close(fd)",
+  "new": "        fd = _try_lock(lock_file)\n        if fd is not None:\n            os.close(fd)",
+  "test": "tests/p0/test_locks.py::TestPurge::test_purge_refused_when_owner_alive"}
+]

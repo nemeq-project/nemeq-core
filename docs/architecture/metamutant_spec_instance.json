@@ -51,8 +51,8 @@
   "id": "M-6.3-f",
   "what": "destroy не проверяет занятость стора",
   "file": "massaru/instance.py",
-  "old": "    lock_file = lock_path(resolved.var, resolved.store)\n    fd = _try_lock(lock_file)\n    if fd is None:\n        pid = _read_lock_pid(lock_file)\n        raise InstanceError(\n            EXIT_LOCK_BUSY,\n            f\"store busy: pid {pid if pid is not None else 'unknown'} (stop the service first)\",\n        )",
-  "new": "    lock_file = lock_path(resolved.var, resolved.store)\n    fd = _try_lock(lock_file) or os.open(os.devnull, os.O_RDONLY)",
+  "old": "    lock_file = lock_path(resolved.var, resolved.store, resolved.home)\n    fd = _try_lock(lock_file)\n    if fd is None:\n        pid = _read_lock_pid(lock_file)\n        raise InstanceError(",
+  "new": "    lock_file = lock_path(resolved.var, resolved.store, resolved.home)\n    fd = _try_lock(lock_file) or os.open(os.devnull, os.O_RDONLY)\n    if False:\n        pid = _read_lock_pid(lock_file)\n        raise InstanceError(",
   "test": "tests/p0/test_instance.py::TestDestroy::test_requires_service_stopped"
  },
  {
