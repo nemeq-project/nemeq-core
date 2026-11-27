@@ -81,19 +81,19 @@
  },
  {
   "id": "M-9.3-a",
-  "what": "health не различает подменённый instance_id → non-200 с кодом 5",
-  "file": "apiserver/server.py",
-  "old": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = [k for k in required if not identity.get(k)]",
-  "new": "    required = (\"instance\", \"home_id\", \"store_id\", \"instance_id\")\n    missing = []",
-  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_identity_mismatch_is_code_5_not_just_down"
+  "what": "подменить instance_id в instance.toml при живом сторе → health отдаёт non-200 с кодом 5",
+  "file": "apiserver/__main__.py",
+  "old": "            check = check_store_identity(resolved, info)\n            if check[\"mismatch\"]:\n                status[\"identityMismatch\"] = True\n                status[\"detail\"] = check[\"detail\"]",
+  "new": "            check = check_store_identity(resolved, info)\n            if False:\n                status[\"identityMismatch\"] = True\n                status[\"detail\"] = check[\"detail\"]",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_tampered_instance_id_gives_code_5"
  },
  {
   "id": "M-9.3-b",
-  "what": "health отдаёт rev на единицу меньший → сравнение до/после падает",
-  "file": "apiserver/server.py",
-  "old": "        \"rev\": int(store_status.get(\"rev\", 0)),",
-  "new": "        \"rev\": int(store_status.get(\"rev\", 0)) - 1,",
-  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_rev_never_decreases"
+  "what": "вернуть в health rev на единицу меньший → сравнение двух ответов живого сервера падает",
+  "file": "apiserver/__main__.py",
+  "old": "        status.update({\n            \"rev\": int(report.rev),",
+  "new": "        status.update({\n            \"rev\": int(report.rev) - 1,",
+  "test": "tests/p0/test_accept_v06.py::TestHealthInvariant::test_rev_never_decreases_between_two_reads"
  },
  {
   "id": "M-9.4-a",
@@ -158,5 +158,13 @@
   "old": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)",
   "new": "    bin_dir = resolved.home / \"bin\"\n    bin_dir.mkdir(parents=True, exist_ok=True)\n    _outside = Path(os.environ.get(\"TMPDIR\", \"/tmp\")) / \"nemeq-outside-write.probe\"\n    _outside.write_text(\"probe\")\n    if _outside.exists():\n        _outside.write_text(\"probe2\")",
   "test": "tests/p0/test_accept_v06.py::TestNoWritesOutsideHome::test_install_writes_nothing_outside_home"
+ },
+ {
+  "id": "M-9.8-b",
+  "what": "сменить UID одного файла (instance.toml) → тест (8) падает",
+  "file": "massaru/instance.py",
+  "old": "    write_store_identity(resolved, store_id=info.store_id,\n                         instance_id=info.instance_id, home_id=home_id)\n    return info",
+  "new": "    write_store_identity(resolved, store_id=info.store_id,\n                         instance_id=info.instance_id, home_id=home_id)\n    os.lchown(state_file, os.getuid() + 1, os.getgid())\n    return info",
+  "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_all_files_owned_by_owner"
  }
 ]

@@ -122,68 +122,277 @@ class TestInstanceIsolation:
         assert _second_owner_blocked(r), "второй владелец того же стора не заблокирован"
 
 
-class TestHealthInvariant:
-    """§9.3: health — инвариант, а не доступность."""
+def live_server(tmp_path, instance="alpha"):
+    """Поднять apiserver на реально установленном инстансе со стором.
 
-    def _payload(self, **over):
+    Возвращает (server, store, resolved). Сервер поднимается через тот же
+    `identity_snapshot()`, что и боевой `__main__`, поэтому проверяется
+    НАСТОЯЩИЙ путь заполнения health, а не переданные вручную словари.
+    """
+    import threading
+
+    from apiserver.handlers import Api
+    from apiserver.openapi import build_openapi
+    from apiserver.server import make_server
+    from apiserver.__main__ import identity_snapshot
+    from massaru.store import Store
+
+    # Уже установленный инстанс переиспользуется: повторный `install()`
+    # перезаписывает `instance.toml` из стора и СТИРАЕТ подмену, которую
+    # проверяет §9.3. Поэтому install — только если инстанса ещё нет.
+    r = resolved_for(tmp_path, instance)
+    if not (r.home / "instances" / instance / "config" / "instance.toml").is_file():
+        install(r)
+    store = Store(r.store)
+
+    # identity_snapshot читает пути из окружения — направляем его на инстанс.
+    old_home = os.environ.get("NEMEQ_HOME")
+    old_inst = os.environ.get("NEMEQ_INSTANCE")
+    os.environ["NEMEQ_HOME"] = str(r.home)
+    os.environ["NEMEQ_INSTANCE"] = instance
+    try:
+        identity, status = identity_snapshot()
+    finally:
+        if old_home is None:
+            os.environ.pop("NEMEQ_HOME", None)
+        else:
+            os.environ["NEMEQ_HOME"] = old_home
+        if old_inst is None:
+            os.environ.pop("NEMEQ_INSTANCE", None)
+        else:
+            os.environ["NEMEQ_INSTANCE"] = old_inst
+
+    api = Api(store, lambda: None)
+    # store_status_fn — живой читатель: rev/last_hash читаются на каждый
+    # запрос, иначе они остаются снимком старта (БЛОКЕР 1).
+    from apiserver.__main__ import store_status as live_status
+
+    def reader():
+        old_h, old_i = os.environ.get("NEMEQ_HOME"), os.environ.get("NEMEQ_INSTANCE")
+        os.environ["NEMEQ_HOME"] = str(r.home)
+        os.environ["NEMEQ_INSTANCE"] = instance
+        try:
+            return live_status()
+        finally:
+            if old_h is None:
+                os.environ.pop("NEMEQ_HOME", None)
+            else:
+                os.environ["NEMEQ_HOME"] = old_h
+            if old_i is None:
+                os.environ.pop("NEMEQ_INSTANCE", None)
+            else:
+                os.environ["NEMEQ_INSTANCE"] = old_i
+
+    srv = make_server(api, port=0, openapi=build_openapi(),
+                      identity=identity, store_status=status,
+                      store_status_fn=reader)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    return srv, store, r, thread
+
+
+def http_get(srv, path="/healthz"):
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    port = srv.server_address[1]
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10) as resp:
+            return resp.status, _json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        return exc.code, _json.loads(exc.read().decode())
+
+
+class TestHealthInvariant:
+    """§9.3: health — инвариант, а не доступность.
+
+    Все проверки идут ПО HTTP против живого сервера и РЕАЛЬНОГО стора:
+    константы в ответе не могут удовлетворить требованию «rev не убывает,
+    last_hash совпадает», поэтому проверять надо фактические значения.
+    """
+
+    def test_rev_and_last_hash_are_real(self, tmp_path):
+        """БЛОКЕР 1: rev/last_hash берутся из стора, а не из литерала.
+
+        Инстанс → 3 записи в стор → `/healthz`. Ожидается `rev == 3` и
+        непустой `last_hash`, совпадающий с `verify()`.
+        """
+        from massaru import store_fsck
+
+        srv, store, r, thread = live_server(tmp_path)
+        try:
+            for i in range(3):
+                store.put(f"grants/g{i}", {"spec": {"n": i}, "status": {}},
+                          expected_rev=0)
+            expected = store_fsck.verify(r.store)
+
+            code, body = http_get(srv)
+            assert code == 200, body
+            assert body["rev"] == 3, f"rev из литерала: {body['rev']} вместо 3"
+            assert body["rev"] == expected.rev
+            assert body["last_hash"], "last_hash пуст — значение не из стора"
+            assert body["last_hash"] == expected.last_hash
+            assert body["fsck"] == "clean"
+            for key in ("instance", "home_id", "store_id", "instance_id", "sandbox"):
+                assert key in body, f"в health нет поля {key}"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            thread.join(timeout=5)
+            store.close()
+
+    def test_last_hash_changes_after_write(self, tmp_path):
+        """last_hash меняется после записи — значит он живой, не константа."""
+        srv, store, r, thread = live_server(tmp_path)
+        try:
+            code, before = http_get(srv)
+            assert code == 200, before
+            assert before["rev"] == 0
+            store.put("grants/new", {"spec": {"n": 1}, "status": {}}, expected_rev=0)
+            code, after = http_get(srv)
+            assert code == 200, after
+            assert after["rev"] == 1, f"rev не вырос: {after['rev']}"
+            assert after["last_hash"] != before["last_hash"], (
+                "last_hash не изменился после записи — поле константа"
+            )
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            thread.join(timeout=5)
+            store.close()
+
+    def test_rev_never_decreases_between_two_reads(self, tmp_path):
+        """Замечание 3: сравниваются два ответа ОДНОГО сервера, не словари.
+
+        Мутант «rev на единицу меньше» даёт second < first и валит тест.
+        """
+        srv, store, r, thread = live_server(tmp_path)
+        try:
+            store.put("grants/a", {"spec": {}, "status": {}}, expected_rev=0)
+            _, first = http_get(srv)
+            store.put("grants/b", {"spec": {}, "status": {}}, expected_rev=0)
+            _, second = http_get(srv)
+            assert second["rev"] >= first["rev"], (
+                f"rev убывает: {first['rev']} -> {second['rev']}"
+            )
+            assert first["rev"] == 1 and second["rev"] == 2, (
+                f"ожидались реальные rev 1 и 2, получены {first['rev']} и {second['rev']}"
+            )
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            thread.join(timeout=5)
+            store.close()
+
+    def test_tampered_instance_id_gives_code_5(self, tmp_path):
+        """БЛОКЕР 2 / M-9.3-a: подмена instance_id на диске → HTTP 503 и код 5.
+
+        Идёт ПО HTTP. Подмена делается на диске при ЖИВОМ сторе, затем
+        сервер стартует заново — §6.1 говорит, что подмена `instance.toml`
+        отражается на следующем старте, а стор остаётся авторитетом.
+        """
+        from massaru.instance import read_store_identity
+
+        srv, store, r, thread = live_server(tmp_path)
+        code, body = http_get(srv)
+        srv.shutdown(); srv.server_close(); thread.join(timeout=5)
+        store.close()
+        assert code == 200, body
+        assert body["instance_id"] != "TAMPERED"
+
+        # Подмена именно на диске.
+        cfg = r.home / "instances" / "alpha" / "config" / "instance.toml"
+        lines = [
+            'instance_id = "TAMPERED-0000"' if line.startswith("instance_id") else line
+            for line in cfg.read_text().splitlines()
+        ]
+        cfg.write_text("\n".join(lines) + "\n")
+
+        # Стор хранит настоящий id — он авторитет (§6.1).
+        assert read_store_identity(r)["instance_id"] != "TAMPERED"
+
+        # «Следующий старт» на том же сторе.
+        srv2, store2, r2, thread2 = live_server(tmp_path)
+        try:
+            code2, body2 = http_get(srv2)
+        finally:
+            srv2.shutdown(); srv2.server_close(); thread2.join(timeout=5)
+            store2.close()
+
+        assert code2 != 200, f"подменённый instance_id дал 200: {body2}"
+        assert body2.get("code") == 5, f"ожидался код 5: {body2}"
+        assert "store" in body2.get("detail", ""), (
+            f"detail не называет авторитет: {body2.get('detail')}"
+        )
+
+    def test_no_instance_marker(self):
+        """Замечание 4: «инстанса нет» отличимо от «инстанс здоров»."""
         from apiserver.server import health_payload
 
-        identity = {
-            "instance": "alpha",
-            "home_id": "h-1",
-            "store_id": "s-1",
-            "instance_id": "i-1",
-        }
-        status = {"rev": 7, "last_hash": "abc", "fsck": "clean", "sandbox": {"nnp": True}}
-        identity.update(over.pop("identity", {}))
-        status.update(over.pop("status", {}))
-        return health_payload(identity, status)
-
-    def test_all_required_fields_present(self):
-        code, body = self._payload()
+        code, body = health_payload({}, {})
         assert code == 200
-        for key in ("instance", "home_id", "store_id", "instance_id",
-                    "rev", "last_hash", "fsck", "sandbox"):
-            assert key in body, f"в health нет поля {key}"
-        assert body["fsck"] == "clean"
+        assert body["status"] == "no-instance"
+        assert body["status"] != "ok"
 
-    def test_identity_mismatch_is_code_5_not_just_down(self):
-        """M-9.3-a: подмена instance_id при живом сторе → non-200 с кодом 5."""
-        code, body = self._payload(identity={"instance_id": ""})
-        assert code != 200
-        assert body["code"] == 5, f"ожидался код 5, получен {body.get('code')}"
+    def test_store_read_failure_is_not_ok(self, tmp_path):
+        """Сбой чтения стора не должен выглядеть как `ok`.
 
-    def test_store_identity_mismatch_is_code_5(self):
-        code, body = self._payload(status={"identityMismatch": True,
-                                           "detail": "store_id differs"})
-        assert code == 503
-        assert body["code"] == 5
-
-    def test_rev_never_decreases(self):
-        """M-9.3-b: вернуть в health `rev` на единицу меньший.
-
-        Сравниваются ДВА реальных ответа того же кода: до и после. Мутант
-        сдвигает `rev` в ответе, поэтому second < first, и тест падает.
-        Сравнивать заранее подготовленные словари было бы вакуумно: они не
-        зависят от кода.
+        Ошибка внутри `store_status()` раньше могла молча оставить дефолт
+        `fsck: clean` — то есть недоступность данных выдавалась за здоровье.
         """
-        _, first = self._payload(status={"rev": 10})
-        _, second = self._payload(status={"rev": 10})
-        assert second["rev"] >= first["rev"], (
-            f"rev убывает: {first['rev']} -> {second['rev']}"
-        )
-        # rev обязан быть ровно тем, что отдаёт стор: сдвиг на единицу — мутант.
-        assert first["rev"] == 10, f"rev искажён: {first['rev']}"
+        from apiserver.__main__ import store_status
 
-    def test_last_hash_stable(self):
-        _, before = self._payload()
-        _, after = self._payload()
-        assert after["last_hash"] == before["last_hash"]
+        old_home = os.environ.get("NEMEQ_HOME")
+        os.environ["NEMEQ_HOME"] = str(tmp_path / "nope")
+        os.environ.pop("NEMEQ_INSTANCE", None)
+        try:
+            status = store_status()
+        finally:
+            if old_home is None:
+                os.environ.pop("NEMEQ_HOME", None)
+            else:
+                os.environ["NEMEQ_HOME"] = old_home
+        assert status["fsck"] != "clean", f"сбой чтения скрыт: {status}"
+
+        from apiserver.server import health_payload
+
+        code, body = health_payload(
+            {"instance": "a", "home_id": "h", "store_id": "s", "instance_id": "i"},
+            status,
+        )
+        assert code != 200 and body["status"] != "ok"
 
     def test_dirty_fsck_is_not_ok(self):
-        code, body = self._payload(status={"fsck": "dirty"})
+        from apiserver.server import health_payload
+
+        code, body = health_payload(
+            {"instance": "a", "home_id": "h", "store_id": "s", "instance_id": "i"},
+            {"fsck": "dirty", "rev": 1, "last_hash": "x"},
+        )
         assert body["status"] != "ok"
         assert code != 200
+
+
+def _snapshot_for(resolved, instance):
+    """Снять identity/status для указанного инстанса (через окружение)."""
+    from apiserver.__main__ import identity_snapshot
+
+    old_home = os.environ.get("NEMEQ_HOME")
+    old_inst = os.environ.get("NEMEQ_INSTANCE")
+    os.environ["NEMEQ_HOME"] = str(resolved.home)
+    os.environ["NEMEQ_INSTANCE"] = instance
+    try:
+        return identity_snapshot()
+    finally:
+        if old_home is None:
+            os.environ.pop("NEMEQ_HOME", None)
+        else:
+            os.environ["NEMEQ_HOME"] = old_home
+        if old_inst is None:
+            os.environ.pop("NEMEQ_INSTANCE", None)
+        else:
+            os.environ["NEMEQ_INSTANCE"] = old_inst
 
 
 class TestDigestIntegrity:

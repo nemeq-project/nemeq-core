@@ -6,9 +6,16 @@ from apiserver._testkit import ADMIN, API, call, server  # noqa: F401
 
 
 def test_healthz(server):
+    """§9.3: сервер без привязанного инстанса обязан отличаться от здорового.
+
+    Раньше здесь ждалось `{"status": "ok"}` — то есть «инстанса нет» было
+    неотличимо от «инстанс здоров». Теперь маркер явный; расширенный ответ
+    с `rev`/`last_hash` даёт только сервер, привязанный к инстансу.
+    """
     status, body = call(server, "GET", "/healthz")
     assert status == 200
-    assert body == {"status": "ok"}
+    assert body["status"] == "no-instance"
+    assert "rev" not in body
 
 
 def test_openapi(server):

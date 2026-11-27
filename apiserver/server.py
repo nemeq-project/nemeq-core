@@ -82,7 +82,13 @@ class Handler(BaseHTTPRequestHandler):
         path, _, raw_query = self.path.partition("?")
         query = parse_qs(raw_query, keep_blank_values=True)
         if path == "/healthz":
-            code, payload = health_payload(self.server.identity, self.server.store_status)
+            status = self.server.store_status
+            if self.server.store_status_fn is not None:
+                try:
+                    status = self.server.store_status_fn()
+                except Exception as exc:  # noqa: BLE001 - health не падает
+                    status = {"fsck": "unavailable", "errors": [str(exc)]}
+            code, payload = health_payload(self.server.identity, status)
             return self._send_json(code, payload)
         if path == "/openapi.json":
             return self._send_json(200, self.server.openapi)
@@ -171,11 +177,14 @@ def health_payload(identity: dict | None, store_status: dict | None) -> tuple[in
     identity = identity or {}
     store_status = store_status or {}
 
-    # Сервер без привязанной идентичности (например, в тестах API) сохраняет
-    # минимальный контракт `/healthz`: расширенный ответ — это ИНВАРИАНТ
-    # установленного инстанса (§9.3), а не свойство любого процесса.
+    # Сервер без инстанса ОБЯЗАН отличаться от здорового (§9.3): клиент,
+    # получивший `ok`, не должен принимать «инстанса нет» за «всё хорошо».
+    # Поэтому явный маркер, а не тот же 200/ok, что у живого инстанса.
     if not identity:
-        return 200, {"status": "ok"}
+        return 200, {
+            "status": "no-instance",
+            "detail": "no instance.toml bound to this process",
+        }
 
     required = ("instance", "home_id", "store_id", "instance_id")
     missing = [k for k in required if not identity.get(k)]
@@ -217,12 +226,16 @@ class Server(ThreadingHTTPServer):
     openapi: dict = {}
     identity: dict = {}
     store_status: dict = {}
+    # Функция живого состояния стора: `rev`/`last_hash` меняются при каждой
+    # записи, поэтому их нельзя кэшировать на старте (§9.3).
+    store_status_fn: object = None
 
 
 def make_server(api: Api, host: str = "127.0.0.1", port: int | None = None,
                 openapi: dict | None = None, *,
                 identity: dict | None = None,
-                store_status: dict | None = None) -> Server:
+                store_status: dict | None = None,
+                store_status_fn=None) -> Server:
     """Создать сервер; port=None -> DEFAULT_PORT, port=0 -> эфемерный порт.
 
     `identity`/`store_status` — снимок идентичности и состояния стора,
@@ -234,6 +247,7 @@ def make_server(api: Api, host: str = "127.0.0.1", port: int | None = None,
     srv.openapi = openapi or {}
     srv.identity = identity or {}
     srv.store_status = store_status or {}
+    srv.store_status_fn = store_status_fn
     Handler.api = api
     Handler.metrics = Metrics()
     return srv
@@ -242,11 +256,13 @@ def make_server(api: Api, host: str = "127.0.0.1", port: int | None = None,
 def serve(api: Api, host: str | None = None, port: int | None = None,
           openapi: dict | None = None, *,
           identity: dict | None = None,
-          store_status: dict | None = None) -> None:
+          store_status: dict | None = None,
+          store_status_fn=None) -> None:
     """Запустить блокирующий сервер на host/port (или NEMEQ_API_HOST/port_from_env)."""
     h = host or os.environ.get("NEMEQ_API_HOST", "127.0.0.1")
     p = port_from_env() if port is None else port
     srv = make_server(api, host=h, port=p, openapi=openapi,
-                      identity=identity, store_status=store_status)
+                      identity=identity, store_status=store_status,
+                      store_status_fn=store_status_fn)
     print(f"listening on http://{h}:{p}", flush=True)
     srv.serve_forever()

@@ -272,7 +272,81 @@ def create(resolved: Resolved) -> InstanceInfo:
     state_file = cfg / STATE_FILE
     _write_toml_simple(state_file, state)
     os.chmod(state_file, 0o600)
+
+    # §6.1: стор — авторитет идентичности, поэтому id дублируются в нём.
+    # Без этой записи подмена instance.toml неотличима от нормы, и §9.3
+    # («подменить instance_id при живом сторе → код 5») невыполним.
+    write_store_identity(resolved, store_id=info.store_id,
+                         instance_id=info.instance_id, home_id=home_id)
     return info
+
+
+STORE_IDENTITY_NAME = "identity.json"
+
+
+def store_identity_path(resolved: Resolved) -> Path:
+    """Метаданные идентичности в самом СТОРЕ (§6.1: авторитет — стор).
+
+    `instance.toml` — конфиг, который можно подменить; стор — данные, которые
+    подменить незаметно нельзя (`store_digest`). Поэтому `store_id` и
+    `instance_id` дублируются в стор, и расхождение с конфигом — это код 5,
+    а не «нормально».
+    """
+    return resolved.store / STORE_IDENTITY_NAME
+
+
+def write_store_identity(resolved: Resolved, *, store_id: str, instance_id: str,
+                         home_id: str = "") -> Path:
+    """Записать метаданные идентичности в стор. Атомарно, 0600."""
+    resolved.store.mkdir(parents=True, exist_ok=True)
+    path = store_identity_path(resolved)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({
+        "store_id": store_id,
+        "instance_id": instance_id,
+        "home_id": home_id,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+    return path
+
+
+def read_store_identity(resolved: Resolved) -> dict:
+    """Прочитать идентичность из стора. Пустой словарь — метаданных нет."""
+    path = store_identity_path(resolved)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def check_store_identity(resolved: Resolved, info: "InstanceInfo") -> dict:
+    """Сверить `instance.toml` с метаданными стора (§6.1, §9.3).
+
+    Возвращает `{"mismatch": bool, "detail": str}`. Стор — авторитет: если
+    `instance_id` в конфиге не совпадает с записанным в стор, живой стор
+    принадлежит ДРУГОМУ инстансу, и `/healthz` обязан отдать код 5, а не 200.
+    """
+    stored = read_store_identity(resolved)
+    if not stored:
+        # Метаданных ещё нет (стор создан до этой проверки) — сверять нечего.
+        return {"mismatch": False, "detail": "store identity metadata absent"}
+
+    for field_name in ("instance_id", "store_id"):
+        expected = str(stored.get(field_name, ""))
+        actual = str(getattr(info, field_name, ""))
+        if expected and actual and expected != actual:
+            return {
+                "mismatch": True,
+                "detail": (
+                    f"{field_name} mismatch: instance.toml={actual!r} "
+                    f"store={expected!r}"
+                ),
+            }
+    return {"mismatch": False, "detail": "store identity matches instance.toml"}
 
 
 def load(resolved: Resolved) -> InstanceInfo:
