@@ -37,15 +37,20 @@ SYSTEMD_SPECIFIER = re.compile(r"%[tSCEL]/nemeq")
 # crit_lint.py содержит пути внутри строк-фикстур собственного selftest.
 ALLOWED_FILES = {
     "massaru/legacy.py",
-    "tests/p0/test_arch_paths.py",
-    "tools/crit_lint.py",
+    "tests/p0/test_arch_paths.py",   # сам сканер: содержит паттерны
+    "tests/p0/test_legacy.py",       # фикстуры миграции: пути по смыслу
+    "tools/crit_lint.py",            # строки-фикстуры собственного selftest
     "API_SCHEMA.md",
 }
 
 # Каталоги, которые не сканируются: документация описывает пути по смыслу,
 # фикстуры их специально содержат.
 SKIP_DIRS = {".git", "__pycache__", "docs", "tests/fixtures", "node_modules",
-             ".pytest_cache", "run", "tests/p0"}
+             ".pytest_cache", "run"}
+
+# tests/p0 больше НЕ исключается целиком: это была слепая зона — нарушения
+# в самих тестах не видел никто. Вместо каталога — поимённый allow-list
+# файлов, которым пути ОС нужны по смыслу (сканер и фикстуры миграции).
 
 # Каталоги-артефакты чужих прогонов: файлы принадлежат root, удалить их
 # пользователь не может, поэтому они переименованы в *.ROOT-ARTIFACT.

@@ -522,8 +522,78 @@ SYSTEM_PREFIXES = ("/usr/", "/lib/", "/lib64/", "/etc/ld.so", "/proc/",
 # СУЩЕСТВУЮЩИЙ файл (O_WRONLY|O_TRUNC, без O_CREAT) не ловилась.
 WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND")
 WRITE_CALLS = ("creat(", "mkdir(", "mkdirat(", "rename(", "renameat(",
-               "link(", "linkat(", "symlink(", "symlinkat(", "unlink(",
-               "unlinkat(", "truncate(", "ftruncate(", "chmod(", "chown(")
+               "renameat2(", "link(", "linkat(", "symlink(", "symlinkat(",
+               "unlink(", "unlinkat(", "truncate(", "ftruncate(",
+               "chmod(", "fchmod(", "chown(", "fchown(")
+
+
+
+def _resolve_at(line: str, chunk: str, trace: Path, home: Path) -> str | None:
+    """Разрешить относительный путь из strings-аргумента через dirfd.
+
+    strace пишет `openat(3, "evil.txt", O_WRONLY)`. Путь относительный, но
+    запись происходит туда, куда указывает fd 3. Если разрешить его от
+    `/proc/<pid>/fd/3`, получим настоящую цель.
+
+    Разбор формата strace:
+      openat(AT_FDCWD, "x", ...)      -> относительный к cwd процесса
+      openat(3, "x", ...)            -> относительный к fd 3
+      renameat2(3, "a", 4, "b", 0)   -> два пути, два fd
+
+    Когда fd разрешить нельзя (трейс без /proc, синтетическая строка),
+    возвращаем путь относительно известных корней или None, если пути нет.
+    Реальная установка идёт с `-f`, и /proc доступен — тогда разрешение точное.
+    """
+    import re
+
+    # Аргументы между скобками: split по запятым верхнего уровня.
+    inside = line.split("(", 1)[1].rsplit(")", 1)[0] if "(" in line else ""
+    parts = [x.strip() for x in inside.split(",")]
+
+    # Находим пару (fd, "path"), где path == chunk.
+    fd = None
+    for i, part in enumerate(parts):
+        if part.strip('"') == chunk and i > 0:
+            prev = parts[i - 1].strip()
+            if prev.isdigit():
+                fd = int(prev)
+            elif prev == "AT_FDCWD":
+                fd = -100
+            else:
+                # renameat2(3, "a", 4, "b", 0): fd идёт ПЕРЕД путём, но
+                # между ними может стоять флаг. Берём ближайший числовой.
+                for back in range(i - 1, max(i - 3, -1), -1):
+                    cand = parts[back].strip()
+                    if cand.isdigit():
+                        fd = int(cand)
+                        break
+
+    if fd is None:
+        return None
+
+    if fd == -100:
+        # Относительно cwd процесса. В трейсе cwd обычно HOME установки;
+        # если не знаем — считаем путём от home (внутри) и не помечаем.
+        return os.path.join(str(home), chunk)
+
+    # Реальный fd: пробуем /proc/<pid>/fd/<n> по каждой строке трейса
+    # (strace -f пишет pid первым полем).
+    pid = None
+    head = line.split("(", 1)[0].split()
+    if head and head[0].isdigit():
+        pid = int(head[0])
+    if pid is not None:
+        link = f"/proc/{pid}/fd/{fd}"
+        try:
+            target = os.readlink(link)
+            return os.path.normpath(os.path.join(target, chunk))
+        except OSError:
+            pass
+
+    # /proc недоступен: консервативно считаем путь подозрительным и
+    # возвращаем как есть от корня — лучше ложное срабатывание, чем
+    # незамеченная запись вне HOME.
+    return os.path.join("/", chunk)
 
 
 def _outside_writes(trace: Path, home: Path) -> list[str]:
@@ -541,14 +611,27 @@ def _outside_writes(trace: Path, home: Path) -> list[str]:
             continue
         head = line.split("(", 1)[0]
         call = head.split()[-1] if head.split() else ""
-        is_write = call.endswith(WRITE_CALLS) or any(
+        # `call` — имя syscall БЕЗ скобки, а WRITE_CALLS хранит строки со
+        # скобкой. Сравниваем по голому имени: иначе ветка endswith не
+        # срабатывает никогда и остаются только WRITE_FLAGS, из-за чего
+        # renameat2/unlinkat без O_* выпадают из проверки.
+        bare = {w.rstrip("(") for w in WRITE_CALLS}
+        is_write = call in bare or any(
             f in line for f in WRITE_FLAGS
         )
         if not is_write:
             continue
+        # Относительный путь разрешается от dirfd, а не отбрасывается.
+        # `openat(3, "evil.txt", O_WRONLY)` пишет туда, куда указывает fd 3 —
+        # пропускать такие строки значит НЕ видеть запись вне HOME.
+        # В строке может быть НЕСКОЛЬКО путей (renameat2: старый и новый).
+        # Разбираем каждый, а не только первый: `renameat2(3, "a", 4, "b")`
+        # переносит файл во второй путь, и пропуск второго = пропуск записи.
         for chunk in line.split('"')[1::2]:
             if not chunk.startswith("/"):
-                continue
+                chunk = _resolve_at(line, chunk, trace, home)
+                if chunk is None:
+                    continue
             resolved = os.path.realpath(chunk)
             if resolved == real_home or resolved.startswith(real_home + os.sep):
                 continue
@@ -587,10 +670,15 @@ class TestOfflineInstall:
         assert not found, f"сетевые импорты в install: {found}"
 
     def test_no_pip_in_path_is_normal(self, tmp_path):
-        """Отсутствие pip в PATH — норма, а не повод падать (§2.1а)."""
+        """Отсутствие pip в PATH — норма, а не повод падать (§2.1а).
+
+        `in (True, False)` — тавтология: булево значение всегда входит в эту
+        пару, проверка не могла провалиться. Нашёл Гермес на ревью.
+        Требуем конкретный результат для конкретного PATH.
+        """
         from massaru.policy import pip_absent
 
-        assert pip_absent({"PATH": "/nonexistent"}) in (True, False)
+        assert pip_absent({"PATH": "/nonexistent"}) is True
 
     def test_install_works_without_pip(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PATH", "/nonexistent")
