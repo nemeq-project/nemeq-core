@@ -88,6 +88,38 @@
   "test": "tests/p0/test_instance.py::TestIdentityMismatch::test_home_id_mismatch_detected"
  },
  {
+  "id": "M-6.1-c",
+  "what": "старт пишет runtime до лока (решение по протухшим данным)",
+  "file": "massaru/runtime_state.py",
+  "old": "    fd = _try_lock(lock_file)\n    if fd is None:\n        raise RuntimeError_(\n            EXIT_LOCK_BUSY, f\"store busy: {lock_file}\"\n        )",
+  "new": "    fd = _try_lock(lock_file)",
+  "test": "tests/p0/test_runtime_state.py::TestLockFirstProtocol::test_start_fails_when_store_busy"
+ },
+ {
+  "id": "M-6.1-d",
+  "what": "протухший runtime-файл не перезаписывается",
+  "file": "massaru/runtime_state.py",
+  "old": "    os.replace(tmp, path)\n    os.chmod(path, 0o600)",
+  "new": "    if path.exists():\n        tmp.unlink(missing_ok=True)\n        return path\n    os.replace(tmp, path)\n    os.chmod(path, 0o600)",
+  "test": "tests/p0/test_runtime_state.py::TestRuntimeFile::test_stale_runtime_overwritten"
+ },
+ {
+  "id": "M-6.1-e",
+  "what": "расхождение instance_id в runtime блокирует старт",
+  "file": "massaru/runtime_state.py",
+  "old": "    port = DEFAULT_PORT if desired is None else desired",
+  "new": "    port = DEFAULT_PORT if desired is None else desired\n    rt = read_runtime(resolved)\n    if rt is not None and rt.get('instanceId') not in (None, resolved.instance):\n        raise RuntimeError_(EXIT_BAD_INVOCATION, 'runtime instance_id mismatch')",
+  "test": "tests/p0/test_runtime_state.py::TestRuntimeFile::test_runtime_id_mismatch_does_not_block"
+ },
+ {
+  "id": "M-6.2-a",
+  "what": "занятый порт принимается (без кода 3)",
+  "file": "massaru/runtime_state.py",
+  "old": "    if port != 0 and not port_is_free(port):",
+  "new": "    if False:",
+  "test": "tests/p0/test_runtime_state.py::TestPortReservation::test_busy_port_rejected_with_code_3"
+ },
+ {
   "id": "M-6.3-a",
   "what": "каталоги создаются без 0700",
   "file": "massaru/instance.py",
