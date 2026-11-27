@@ -320,6 +320,30 @@
   "test": "tests/p0/test_migrate.py::TestPreflight::test_target_not_empty"
  },
  {
+  "id": "M-7.10-a",
+  "what": "--use-lib-from равен --from-home (версия из мигрируемого HOME)",
+  "file": "massaru/legacy_home.py",
+  "old": "    if _is_same_path(plan.use_lib_from, plan.from_home):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION,\n            f\"--use-lib-from must not point at the source HOME: \"\n            f\"{plan.use_lib_from} == {plan.from_home}\",\n        )",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_legacy_home.py::TestLibSource::test_lib_equal_source_refused"
+ },
+ {
+  "id": "M-7.10-b",
+  "what": "коллизия store_id не обнаруживается (две копии одного стора)",
+  "file": "massaru/legacy_home.py",
+  "old": "    existing = find_store_collision(home, manifest.store_id)\n    if existing is None:\n        return",
+  "new": "    existing = None\n    if existing is None:\n        return",
+  "test": "tests/p0/test_legacy_home.py::TestCollision::test_same_store_id_refused"
+ },
+ {
+  "id": "M-7.10-c",
+  "what": "instance_id не уникален (переиспользуется store_id)",
+  "file": "massaru/legacy_home.py",
+  "old": "    instance_id = str(uuid.uuid4())",
+  "new": "    instance_id = manifest.store_id",
+  "test": "tests/p0/test_legacy_home.py::TestCollision::test_different_store_ids_both_pass"
+ },
+ {
   "id": "M-7.2-a",
   "what": "нет восстановления состояния published",
   "file": "massaru/migrate.py",
