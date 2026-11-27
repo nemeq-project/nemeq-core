@@ -205,9 +205,26 @@ def scan_ast(root: Path) -> list[str]:
 
 
 def scan_gitignore(root: Path) -> list[str]:
-    """Файл, спрятанный в .gitignore, не должен скрывать нарушения."""
+    """Файл, спрятанный в .gitignore, не должен скрывать нарушения.
+
+    Отсутствие `.gitignore` — НЕ «всё чисто». Пустой список здесь означал бы
+    «проверено и нарушений нет», хотя проверять было нечего: копия дерева
+    без `.gitignore` (архив, экспорт) давала бы ложно-зелёный результат.
+    Поэтому отсутствие файла в корне репозитория — отдельная находка.
+    """
     gi = root / ".gitignore"
     if not gi.is_file():
+        # Корень репозитория определяется наличием соседних маркеров:
+        # если это похоже на дерево проекта, .gitignore обязан быть.
+        looks_like_repo = any(
+            (root / marker).exists()
+            for marker in ("pyproject.toml", "riksu.toml", "setup.py", "massaru")
+        )
+        if looks_like_repo:
+            return [
+                ".gitignore отсутствует в корне проекта — проверка скрытых "
+                "путей не выполнима (это НЕ значит «нарушений нет»)"
+            ]
         return []
     hits = []
     for lineno, line in enumerate(gi.read_text(encoding="utf-8").splitlines(), 1):
