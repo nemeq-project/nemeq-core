@@ -29,7 +29,8 @@ def resolve_store(args: argparse.Namespace) -> Path:
     env = os.environ.get("NEMEQ_STORE")
     if env:
         return Path(env)
-    return Path("/var/nemeq/apiserver")
+    from massaru.layout import resolve_all
+    return resolve_all().store
 
 
 def main(argv: list[str] | None = None) -> int:

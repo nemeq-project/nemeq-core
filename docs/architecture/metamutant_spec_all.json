@@ -1,0 +1,298 @@
+[
+ {
+  "id": "M-2.1-a",
+  "what": "min_glibc не проверяется — install идёт на неподходящем хосте",
+  "file": "massaru/install.py",
+  "old": "    glibc_ok = libc_name == \"glibc\" and _version_ge(libc_ver, min_glibc or \"2.28\")",
+  "new": "    glibc_ok = True",
+  "test": "tests/p0/test_install.py::TestPreflight::test_glibc_too_high_rejected"
+ },
+ {
+  "id": "M-2.1-b",
+  "what": "каталоги создаются до preflight — полуустановка при отказе",
+  "file": "massaru/install.py",
+  "old": "    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "new": "    resolved.home.mkdir(parents=True, exist_ok=True)\n    pf = preflight(resolved, min_glibc=min_glibc)\n    if not pf.ok:",
+  "test": "tests/p0/test_install.py::TestPreflight::test_no_directories_created_on_failed_preflight"
+ },
+ {
+  "id": "M-2.5-a",
+  "what": "sha256 колеса не сверяется с манифестом",
+  "file": "massaru/deps.py",
+  "old": "        actual = _sha256_file(path)\n        if actual != expected:",
+  "new": "        actual = _sha256_file(path)\n        if False:",
+  "test": "tests/p0/test_deps.py::TestHashVerification::test_tampered_wheel_rejected"
+ },
+ {
+  "id": "M-4.3-a",
+  "what": "PYTHONDONTWRITEBYTECODE не выставляется — lib станет записываемым",
+  "file": "massaru/unit.py",
+  "old": "        \"Environment=PYTHONDONTWRITEBYTECODE=1\",",
+  "new": "",
+  "test": "tests/p0/test_unit.py::TestHardening::test_no_bytecode_env"
+ },
+ {
+  "id": "M-4.3-b",
+  "what": "байткод не компилируется при установке зависимостей",
+  "file": "massaru/deps.py",
+  "old": "    report.compiled = _compile(target)",
+  "new": "    report.compiled = 0",
+  "test": "tests/p0/test_deps.py::TestInstall::test_bytecode_compiled"
+ },
+ {
+  "id": "M-4.5-a",
+  "what": "schema_version стора не сверяется с манифестом",
+  "file": "massaru/install.py",
+  "old": "    if supported and store_schema > supported:",
+  "new": "    if False:",
+  "test": "tests/p0/test_install.py::TestSchemaCompat::test_newer_store_schema_rejected"
+ },
+ {
+  "id": "M-4.6-a",
+  "what": "длина пути до сокета не проверяется",
+  "file": "massaru/install.py",
+  "old": "    ok &= _chk(checks, \"socket_path_len\", longest <= 100, f\"{longest} chars\")",
+  "new": "    ok &= _chk(checks, \"socket_path_len\", True, f\"{longest} chars\")",
+  "test": "tests/p0/test_install.py::TestPreflight::test_socket_path_length_checked"
+ },
+ {
+  "id": "M-4.7-a",
+  "what": "манифест установки создаётся с правами по umask",
+  "file": "massaru/install.py",
+  "old": "    mpath.write_text(json.dumps(manifest, indent=1), encoding=\"utf-8\")\n    os.chmod(mpath, 0o600)",
+  "new": "    mpath.write_text(json.dumps(manifest, indent=1), encoding=\"utf-8\")",
+  "test": "tests/p0/test_install.py::TestInstall::test_manifest_permissions_0600"
+ },
+ {
+  "id": "M-4.7-b",
+  "what": "чужой UID среди файлов не обнаруживается",
+  "file": "massaru/doctor.py",
+  "old": "                if uid >= 0 and uid != expecting:\n                    wrong.append(f\"{full} uid={uid}\")",
+  "new": "                if False:\n                    pass",
+  "test": "tests/p0/test_doctor.py::TestPermissions::test_owner_checked"
+ },
+ {
+  "id": "M-6.1-a",
+  "what": "store_id и instance_id совпадают",
+  "file": "massaru/instance.py",
+  "old": "        instance_id=str(uuid.uuid4()),\n        store_id=str(uuid.uuid4()),",
+  "new": "        instance_id=str(uuid.uuid4()),\n        store_id=str(uuid.uuid4())[:0] + \"x\",",
+  "test": "tests/p0/test_instance.py::TestCreate::test_triple_identity"
+ },
+ {
+  "id": "M-6.1-b",
+  "what": "home_id не сверяется при загрузке",
+  "file": "massaru/instance.py",
+  "old": "    if data.get(\"home_id\") and home_data.get(\"home_id\") and data[\"home_id\"] != home_data[\"home_id\"]:\n        raise InstanceError(\n            EXIT_IDENTITY_MISMATCH,\n            f\"home_id mismatch: instance={data['home_id']} home={home_data['home_id']}\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_instance.py::TestIdentityMismatch::test_home_id_mismatch_detected"
+ },
+ {
+  "id": "M-6.3-a",
+  "what": "каталоги создаются без 0700",
+  "file": "massaru/instance.py",
+  "old": "    for key in (\"root\", \"var\", \"store\", \"logs\", \"run\"):\n        paths[key].mkdir(parents=True, exist_ok=True)\n        os.chmod(paths[key], 0o700)",
+  "new": "    for key in (\"root\", \"var\", \"store\", \"logs\", \"run\"):\n        paths[key].mkdir(parents=True, exist_ok=True)",
+  "test": "tests/p0/test_instance.py::TestCreate::test_permissions_0700"
+ },
+ {
+  "id": "M-6.3-b",
+  "what": "конфиг инстанса не получает 0600",
+  "file": "massaru/instance.py",
+  "old": "    _write_toml_simple(state_file, state)\n    os.chmod(state_file, 0o600)",
+  "new": "    _write_toml_simple(state_file, state)",
+  "test": "tests/p0/test_instance.py::TestCreate::test_config_0600"
+ },
+ {
+  "id": "M-6.4-a",
+  "what": "лок перенесён внутрь store/",
+  "file": "massaru/layout.py",
+  "old": "    return var / \"locks\" / f\"{digest}.lock\"",
+  "new": "    return var / \"store\" / f\"{digest}.lock\"",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_inside_var_locks"
+ },
+ {
+  "id": "M-6.4-d",
+  "what": "путь лока считается от строки, а не от realpath",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()",
+  "new": "    digest = hashlib.sha256(str(store).encode(\"utf-8\")).hexdigest()",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_identity_by_realpath_not_by_name"
+ },
+ {
+  "id": "M-6.4-g",
+  "what": "хеш лока усечён до 16 символов",
+  "file": "massaru/layout.py",
+  "old": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()",
+  "new": "    digest = hashlib.sha256(os.path.realpath(store).encode(\"utf-8\")).hexdigest()[:16]",
+  "test": "tests/p0/test_layout_resolvers.py::TestLockPath::test_full_sha256_not_truncated"
+ },
+ {
+  "id": "M-6.4-i",
+  "what": "locks/ копируется при миграции",
+  "file": "massaru/migrate.py",
+  "old": "COPY_DIRS = (\"store\", \"epishu\", \"state\", \"data\")",
+  "new": "COPY_DIRS = (\"store\", \"epishu\", \"state\", \"data\", \"locks\")",
+  "test": "tests/p0/test_migrate.py::TestHappyPath::test_locks_and_tmp_not_copied"
+ },
+ {
+  "id": "M-6.5-a",
+  "what": "имя юнита без имени инстанса — два инстанса конфликтуют",
+  "file": "massaru/unit.py",
+  "old": "    return f\"nemeq-{instance}.service\"",
+  "new": "    return \"nemeq.service\"",
+  "test": "tests/p0/test_unit.py::TestNaming::test_unit_name_contains_instance"
+ },
+ {
+  "id": "M-6.5-b",
+  "what": "%h допускается в юните",
+  "file": "massaru/unit.py",
+  "old": "    for spec in FORBIDDEN_SPECIFIERS:\n        if spec in content:",
+  "new": "    for spec in ():\n        if spec in content:",
+  "test": "tests/p0/test_unit.py::TestSpecifiers::test_reject_specifier_injection"
+ },
+ {
+  "id": "M-6.5-c",
+  "what": "в юнит попадает относительный путь",
+  "file": "massaru/unit.py",
+  "old": "        f\"Environment=NEMEQ_HOME={resolved.home}\",",
+  "new": "        f\"Environment=NEMEQ_HOME={resolved.instance}\",",
+  "test": "tests/p0/test_unit.py::TestPaths::test_all_paths_absolute"
+ },
+ {
+  "id": "M-7.1-b",
+  "what": "непустой target не проверяется",
+  "file": "massaru/migrate.py",
+  "old": "    if tgt.exists() and any(tgt.iterdir()):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION, f\"target is not empty: {tgt}\"\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestPreflight::test_target_not_empty"
+ },
+ {
+  "id": "M-7.2-a",
+  "what": "нет восстановления состояния published",
+  "file": "massaru/migrate.py",
+  "old": "    if where == \"published\":\n        # rename сделан, отчёт не записан — дописать.\n        return _finish_report(plan, state)",
+  "new": "    if where == \"published\":\n        raise MigrateError(ExitCode.IO_ERROR, \"crash after publish\")",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_resume_after_published_without_report"
+ },
+ {
+  "id": "M-7.2-d",
+  "what": "манифест published не сверяется с фактическим digest",
+  "file": "massaru/migrate.py",
+  "old": "            if expected and actual != expected:\n                _write_state(plan.run_dir, {**state, \"state\": \"failed:corrupt_publish\"})\n                raise MigrateError(\n                    ExitCode.DATA_DIGEST,\n                    \"published tree digest does not match manifest\",\n                )",
+  "new": "            pass",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_var_without_staging_but_bad_digest"
+ },
+ {
+  "id": "M-7.2-e",
+  "what": "состояние «нет ни var, ни staging» не обрабатывается",
+  "file": "massaru/migrate.py",
+  "old": "        raise MigrateError(\n            ExitCode.IO_ERROR, \"neither var nor staging exists: manual resolution required\"\n        )",
+  "new": "        return _finish_report(plan, state)",
+  "test": "tests/p0/test_migrate.py::TestRecovery::test_publishing_neither_exists_is_error"
+ },
+ {
+  "id": "M-7.3-a",
+  "what": "каталоги не входят в digest",
+  "file": "massaru/digest.py",
+  "old": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(mode)\n                entries.append((relb, 2, body, rels))",
+  "new": "            if stat.S_ISDIR(st.st_mode):\n                if not any(True for _ in os.scandir(full)):\n                    empty_dirs.append(rels)\n                continue",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_empty_dir_removal_changes_digest"
+ },
+ {
+  "id": "M-7.3-b",
+  "what": "содержимое файла не хешируется, только размер",
+  "file": "massaru/digest.py",
+  "old": "            body = _u64be(st.st_size) + dig.digest() + _u32be(mode)",
+  "new": "            body = _u64be(st.st_size) + b\"\\x00\" * 32 + _u32be(mode)",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_byte_change_detected"
+ },
+ {
+  "id": "M-7.3-c",
+  "what": "tmp/ и locks/ входят в digest",
+  "file": "massaru/digest.py",
+  "old": "        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS\n                       and not (here == root and d in EXCLUDED_DIRS)]",
+  "new": "        pass",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_tmp_and_locks_excluded"
+ },
+ {
+  "id": "M-7.3-e",
+  "what": "корневая директория не входит в набор",
+  "file": "massaru/digest.py",
+  "old": "    if include_root:\n        root_mode = stat.S_IMODE(os.lstat(root).st_mode)\n        h.update(_entry_bytes(b\"\", 2, _u32be(root_mode)))",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_root_mode_is_hashed"
+ },
+ {
+  "id": "M-7.3-f",
+  "what": "особые файлы пропускаются молча",
+  "file": "massaru/digest.py",
+  "old": "            if not stat.S_ISREG(st.st_mode):\n                raise DigestError(\n                    f\"unsupported file type (fifo/socket/device): {rel}\"\n                )",
+  "new": "            if not stat.S_ISREG(st.st_mode):\n                continue",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_fifo_rejected"
+ },
+ {
+  "id": "M-7.3-g",
+  "what": "hard links разрешены",
+  "file": "massaru/digest.py",
+  "old": "            if st.st_nlink > 1:",
+  "new": "            if False:",
+  "test": "tests/p0/test_digest.py::TestRestrictions::test_hardlink_rejected"
+ },
+ {
+  "id": "M-7.3-i",
+  "what": "режим каталога не входит в digest",
+  "file": "massaru/digest.py",
+  "old": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(mode)",
+  "new": "            if stat.S_ISDIR(st.st_mode):\n                body = _u32be(0)",
+  "test": "tests/p0/test_digest.py::TestDigestBasics::test_dir_mode_changes_digest"
+ },
+ {
+  "id": "M-7.4-d",
+  "what": "content_digest не сравнивается после копирования",
+  "file": "massaru/migrate.py",
+  "old": "    if report.content_digest_source != report.content_digest_target:\n        _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"failed:digest\"})\n        raise MigrateError(\n            ExitCode.DATA_DIGEST,\n            f\"content digest mismatch: {report.content_digest_source} != {report.content_digest_target}\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestDigestGate::test_content_mismatch_detected"
+ },
+ {
+  "id": "M-7.4-e",
+  "what": "mode входит в content_digest",
+  "file": "massaru/digest.py",
+  "old": "        if kind == 0:\n            # отбрасываем u32be(mode) в хвосте\n            core = body[:-4]",
+  "new": "        if kind == 0:\n            core = body",
+  "test": "tests/p0/test_digest.py::TestContentVsMetadata::test_content_ignores_mode"
+ },
+ {
+  "id": "M-7.4-f",
+  "what": "права не нормализуются перед публикацией",
+  "file": "massaru/migrate.py",
+  "old": "    _normalize_permissions(staging)",
+  "new": "    pass",
+  "test": "tests/p0/test_migrate.py::TestNormalization::test_permissions_normalized_unprivileged"
+ },
+ {
+  "id": "M-7.5-a",
+  "what": "абсолютный симлинк копируется вместо отказа",
+  "file": "massaru/migrate.py",
+  "old": "                if os.path.isabs(link_target):\n                    raise MigrateError(\n                        ExitCode.NO_RULE,\n                        f\"absolute symlink not supported: {rel / name} -> {link_target}\",\n                    )",
+  "new": "                pass",
+  "test": "tests/p0/test_migrate.py::TestSymlinks::test_absolute_symlink_rejected"
+ },
+ {
+  "id": "M-7.5-b",
+  "what": "симлинк разыменовывается при копировании",
+  "file": "massaru/migrate.py",
+  "old": "                os.symlink(link_target, t)\n                continue",
+  "new": "                shutil.copyfile(s, t, follow_symlinks=True)\n                continue",
+  "test": "tests/p0/test_migrate.py::TestSymlinks::test_relative_symlink_preserved"
+ },
+ {
+  "id": "M-7.7-a",
+  "what": "источник удаляется после успешной миграции",
+  "file": "massaru/migrate.py",
+  "old": "    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
+  "new": "    shutil.rmtree(plan.source_var, ignore_errors=True)\n    _write_state(plan.run_dir, {**_read_state(plan.run_dir), \"state\": \"reported\"})",
+  "test": "tests/p0/test_migrate.py::TestHappyPath::test_source_untouched"
+ }
+]

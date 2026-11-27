@@ -23,12 +23,12 @@ def build_parser(config: dict | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nqctl")
     parser.add_argument(
         "--store",
-        default=os.environ.get("NEMEQ_STORE", "/var/nemeq/apiserver"),
+        default=None,  # разрешается резолвером (massaru.layout.resolve_all)
     )
     parser.add_argument(
         "--api-url",
         default=None,
-        help="apiserver URL (default: ~/.nq/config, NEMEQ_API_URL, :8448)",
+        help="apiserver URL (default: from NEMEQ_HOME config, NEMEQ_API_URL)",
     )
     parser.add_argument("--actor", default=None, help="actor for admission")
     sub = parser.add_subparsers(dest="command", required=True)
