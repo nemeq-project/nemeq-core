@@ -166,5 +166,21 @@
   "old": "    write_store_identity(resolved, store_id=info.store_id,\n                         instance_id=info.instance_id, home_id=home_id)\n    return info",
   "new": "    write_store_identity(resolved, store_id=info.store_id,\n                         instance_id=info.instance_id, home_id=home_id)\n    os.lchown(state_file, os.getuid() + 1, os.getgid())\n    return info",
   "test": "tests/p0/test_accept_v06.py::TestNonRootIdempotency::test_all_files_owned_by_owner"
+ },
+ {
+  "id": "M-9.8-d",
+  "what": "overlayfs перестаёт быть неподдерживаемой ФС (реальный mount, не mock)",
+  "file": "massaru/install.py",
+  "old": "\"smb3\", \"overlay\", \"fuse.sshfs\"",
+  "new": "\"smb3\", \"fuse.sshfs\"",
+  "test": "tests/p0/test_unsupported_fs.py::TestRealUnsupportedFs::test_preflight_refuses_real_overlay"
+ },
+ {
+  "id": "M-9.8-e",
+  "what": "неподдерживаемая ФС отдаёт код 2 вместо 8 (§7.9)",
+  "file": "massaru/install.py",
+  "old": "        only_fs = all(c[\"check\"] == \"filesystem\" for c in failed)\n        code = EXIT_UNSUPPORTED_FS if only_fs else EXIT_BAD_INVOCATION",
+  "new": "        code = EXIT_BAD_INVOCATION",
+  "test": "tests/p0/test_unsupported_fs.py::TestRealUnsupportedFs::test_install_code_8_on_unsupported_fs"
  }
 ]

@@ -190,8 +190,13 @@ def install(
     pf = preflight(resolved, min_glibc=min_glibc)
     if not pf.ok:
         failed = [c for c in pf.checks if not c["ok"]]
+        # §7.9: неподдерживаемая ФС — отдельный код 8, а не 2. Иначе клиент
+        # не отличит «неверный вызов» от «на этой ФС работать нельзя»:
+        # первый исправляется флагом, второй — сменой ФС.
+        only_fs = all(c["check"] == "filesystem" for c in failed)
+        code = EXIT_UNSUPPORTED_FS if only_fs else EXIT_BAD_INVOCATION
         raise _InstallError(
-            EXIT_BAD_INVOCATION,
+            code,
             "preflight failed: " + "; ".join(f"{c['check']}: {c['detail']}" for c in failed),
             pf.as_dict(),
         )
