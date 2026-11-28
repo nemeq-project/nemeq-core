@@ -1,0 +1,82 @@
+[
+ {
+  "id": "M-6.3-a",
+  "what": "каталоги создаются без 0700",
+  "file": "massaru/instance.py",
+  "old": "    for key in (\"root\", \"var\", \"store\", \"logs\", \"run\"):\n        paths[key].mkdir(parents=True, exist_ok=True)\n        os.chmod(paths[key], 0o700)",
+  "new": "    for key in (\"root\", \"var\", \"store\", \"logs\", \"run\"):\n        paths[key].mkdir(parents=True, exist_ok=True)",
+  "test": "tests/p0/test_instance.py::TestCreate::test_permissions_0700"
+ },
+ {
+  "id": "M-6.3-b",
+  "what": "конфиг инстанса не получает 0600",
+  "file": "massaru/instance.py",
+  "old": "    _write_toml_simple(state_file, state)\n    os.chmod(state_file, 0o600)",
+  "new": "    _write_toml_simple(state_file, state)",
+  "test": "tests/p0/test_instance.py::TestCreate::test_config_0600"
+ },
+ {
+  "id": "M-6.1-a",
+  "what": "store_id и instance_id совпадают",
+  "file": "massaru/instance.py",
+  "old": "        instance_id=str(uuid.uuid4()),\n        store_id=str(uuid.uuid4()),",
+  "new": "        instance_id=str(uuid.uuid4()),\n        store_id=str(uuid.uuid4())[:0] + \"x\",",
+  "test": "tests/p0/test_instance.py::TestCreate::test_triple_identity"
+ },
+ {
+  "id": "M-6.3-c",
+  "what": "повторный create перезаписывает инстанс",
+  "file": "massaru/instance.py",
+  "old": "    if (paths[\"root\"] / \"config\" / STATE_FILE).is_file():\n        raise InstanceError(\n            EXIT_BAD_INVOCATION,\n            f\"instance {resolved.instance!r} already exists at {paths['root']}\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_instance.py::TestCreate::test_recreate_rejected"
+ },
+ {
+  "id": "M-6.3-d",
+  "what": "home_id перегенерируется при каждом create",
+  "file": "massaru/instance.py",
+  "old": "    existing = _read_toml_simple(home_file)\n    if existing.get(\"home_id\"):\n        return str(existing[\"home_id\"])",
+  "new": "    pass",
+  "test": "tests/p0/test_instance.py::TestCreate::test_home_id_stable"
+ },
+ {
+  "id": "M-6.3-e",
+  "what": "destroy удаляет lib/",
+  "file": "massaru/instance.py",
+  "old": "        cfg = paths[\"root\"] / \"config\"",
+  "new": "        shutil.rmtree(lib_dir(resolved.home), ignore_errors=True)\n        cfg = paths[\"root\"] / \"config\"",
+  "test": "tests/p0/test_instance.py::TestDestroy::test_removes_data_keeps_lib_and_lock"
+ },
+ {
+  "id": "M-6.3-f",
+  "what": "destroy не проверяет занятость стора",
+  "file": "massaru/instance.py",
+  "old": "    lock_file = lock_path(resolved.var, resolved.store, resolved.home)\n    fd = _try_lock(lock_file)\n    if fd is None:\n        pid = _read_lock_pid(lock_file)\n        raise InstanceError(",
+  "new": "    lock_file = lock_path(resolved.var, resolved.store, resolved.home)\n    fd = _try_lock(lock_file) or os.open(os.devnull, os.O_RDONLY)\n    if False:\n        pid = _read_lock_pid(lock_file)\n        raise InstanceError(",
+  "test": "tests/p0/test_instance.py::TestDestroy::test_requires_service_stopped"
+ },
+ {
+  "id": "M-6.3-g",
+  "what": "purge не проверяет живых владельцев",
+  "file": "massaru/instance.py",
+  "old": "        if fd is None:\n            pid = _read_lock_pid(lock_file)\n            raise InstanceError(\n                EXIT_LOCK_BUSY,\n                f\"refusing purge: instance {inst.name!r} store busy \"\n                f\"(pid {pid if pid is not None else 'unknown'})\",\n            )",
+  "new": "        if fd is None:\n            pass",
+  "test": "tests/p0/test_instance.py::TestUninstall::test_purge_refused_when_busy"
+ },
+ {
+  "id": "M-6.1-b",
+  "what": "home_id не сверяется при загрузке",
+  "file": "massaru/instance.py",
+  "old": "    if data.get(\"home_id\") and home_data.get(\"home_id\") and data[\"home_id\"] != home_data[\"home_id\"]:\n        raise InstanceError(\n            EXIT_IDENTITY_MISMATCH,\n            f\"home_id mismatch: instance={data['home_id']} home={home_data['home_id']}\",\n        )",
+  "new": "    pass",
+  "test": "tests/p0/test_instance.py::TestIdentityMismatch::test_home_id_mismatch_detected"
+ },
+ {
+  "id": "M-5.6",
+  "what": "источник пути не печатается в status",
+  "file": "massaru/layout.py",
+  "old": "    sources = {\n        \"home\": \"--home\" if home else (\"env(NEMEQ_HOME)\" if environ.get(\"NEMEQ_HOME\") else \"default\"),",
+  "new": "    sources = {\n        \"home\": \"default\",",
+  "test": "tests/p0/test_instance.py::TestListStatus::test_status_reports_sources"
+ }
+]

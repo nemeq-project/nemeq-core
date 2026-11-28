@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .layout import resolve_store, resolve_var, resolve_home, resolve_instance
 from .store import FsckReport, Store, scan_store
 
 
@@ -35,7 +36,7 @@ def snapshot(path: str | Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="store_fsck")
     parser.add_argument("action", choices=("fsck", "verify", "snapshot"))
-    parser.add_argument("--store", default="/var/nemeq/apiserver")
+    parser.add_argument("--store", default=None, help="store path (default: resolved from NEMEQ_HOME)")
     parser.add_argument("--repair", action="store_true")
     parser.add_argument("--remote", default=None)
     args = parser.parse_args(argv)

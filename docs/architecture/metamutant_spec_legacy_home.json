@@ -1,0 +1,61 @@
+[
+ {"id": "M-7.10-a", "what": "--use-lib-from равен --from-home (версия из мигрируемого HOME)",
+  "file": "massaru/legacy_home.py",
+  "old": "    if _is_same_path(plan.use_lib_from, plan.from_home):\n        raise MigrateError(\n            ExitCode.BAD_INVOCATION,\n            f\"--use-lib-from must not point at the source HOME: \"\n            f\"{plan.use_lib_from} == {plan.from_home}\",\n        )",
+  "new": "    if False:\n        pass",
+  "test": "tests/p0/test_legacy_home.py::TestLibSource::test_lib_equal_source_refused"},
+
+ {"id": "M-7.10-b", "what": "коллизия store_id не обнаруживается (две копии одного стора)",
+  "file": "massaru/legacy_home.py",
+  "old": "    existing = find_store_collision(home, manifest.store_id)\n    if existing is None:\n        return",
+  "new": "    existing = None\n    if existing is None:\n        return",
+  "test": "tests/p0/test_legacy_home.py::TestCollision::test_same_store_id_refused"},
+
+ {"id": "M-7.10-c", "what": "instance_id не уникален (переиспользуется store_id)",
+  "file": "massaru/legacy_home.py",
+  "old": "    instance_id = str(uuid.uuid4())",
+  "new": "    instance_id = manifest.store_id",
+  "test": "tests/p0/test_legacy_home.py::TestCollision::test_different_store_ids_both_pass"},
+
+ {"id": "M-7.10-d", "what": "схема источника не сверяется с lib (берётся любой)",
+  "file": "massaru/legacy_home.py",
+  "old": "    if manifest.schema_version > supported:",
+  "new": "    if False:",
+  "test": "tests/p0/test_legacy_home.py::TestVersionChecks::test_schema_too_new"},
+
+ {"id": "M-7.10-e", "what": "расхождение nemeq_version пропускается молча",
+  "file": "massaru/legacy_home.py",
+  "old": "    if wanted and manifest.nemeq_version and manifest.nemeq_version != wanted:",
+  "new": "    if False:",
+  "test": "tests/p0/test_legacy_home.py::TestVersionChecks::test_version_skew"},
+
+ {"id": "M-7.10-f", "what": "слияние двух HOME в один инстанс разрешено",
+  "file": "massaru/legacy_home.py",
+  "old": "    if len(sources) > 1:",
+  "new": "    if False:",
+  "test": "tests/p0/test_legacy_home.py::TestMergeRefused::test_two_homes_refused"},
+
+ {"id": "M-7.10-g", "what": "копируется весь HOME, а не только var/",
+  "file": "massaru/legacy_home.py",
+  "old": "    files, total = _copytree(manifest.var, target_var)",
+  "new": "    files, total = _copytree(manifest.home, target_var)",
+  "test": "tests/p0/test_legacy_home.py::TestCopyScope::test_only_var_copied"},
+
+ {"id": "M-7.10-h", "what": "симлинк на источник обходит запрет --use-lib-from",
+  "file": "massaru/legacy_home.py",
+  "old": "    try:\n        return os.path.realpath(a) == os.path.realpath(b)\n    except OSError:\n        return False",
+  "new": "    try:\n        return str(a) == str(b)\n    except OSError:\n        return False",
+  "test": "tests/p0/test_legacy_home.py::TestLibSource::test_lib_symlink_to_source_refused"},
+
+ {"id": "M-7.10-i", "what": "коллизия не различает копию и дивергенцию (всегда says copy)",
+  "file": "massaru/legacy_home.py",
+  "old": "            if content_digest(other_var) == content_digest(manifest.var):\n                relation = \"identical copy (same digest)\"\n            else:\n                relation = \"diverged (digest differs)\"",
+  "new": "            relation = \"identical copy (same digest)\"",
+  "test": "tests/p0/test_legacy_home.py::TestCollision::test_diverged_copy_reported"},
+
+ {"id": "M-7.10-j", "what": "lineage остаётся пустым (происхождение не записано)",
+  "file": "massaru/legacy_home.py",
+  "old": "    lineage: list[str] = []\n    if manifest.instance_name:\n        lineage.append(f\"{manifest.instance_name}@store:{manifest.store_id}\")",
+  "new": "    lineage: list[str] = []\n    if False:\n        lineage.append(f\"{manifest.instance_name}@store:{manifest.store_id}\")",
+  "test": "tests/p0/test_legacy_home.py::TestCopyScope::test_instance_id_is_new"}
+]

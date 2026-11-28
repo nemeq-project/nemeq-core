@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--state-root",
         default=argparse.SUPPRESS,
-        help="var-zone root (default: /var/nemeq; NEMEQ_VAR_ROOT for tests)",
+        help="var-zone root (default: resolved from NEMEQ_HOME)",
     )
 
     parser = argparse.ArgumentParser(

@@ -22,7 +22,8 @@ class ApiError(Exception):
 
 def load_config(path: str | None = None) -> dict[str, Any]:
     if path is None:
-        path = str(Path.home() / ".nq" / "config")
+        from massaru.layout import resolve_home
+        path = str(resolve_home() / "config" / "nq.json")
     try:
         return json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError, ValueError):

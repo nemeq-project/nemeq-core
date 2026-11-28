@@ -1,0 +1,947 @@
+[
+ {
+  "id": "M-2.1-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-2.1-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-2.2-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-2.3-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-2.4-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-2.5-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.1-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.1-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.2-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.3-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.3-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.4-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.5-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.6-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.7-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.7-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.8-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.8-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.8-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-4.8-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.1-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.1-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.1-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.1-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.1-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.2-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.3-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.3-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-g",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-h",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-i",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.4-j",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.5-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.5-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-6.5-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.1-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.1-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.2-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.2-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.2-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.2-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.2-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-g",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-h",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.3-i",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-g",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-h",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-i",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.4-j",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.5-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.5-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.6-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.7-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.7-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.8-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.8-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.9-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.10-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.10-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-7.10-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-g",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-h",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.1-i",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.2-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.3-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.3-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.4-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.5-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.6-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.7-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.8-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.8-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.8-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.9-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-a",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-b",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-c",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-d",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-e",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-f",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ },
+ {
+  "id": "M-9.10-g",
+  "what": "мутант из docs/architecture/NEMEQ_HOME_LAYOUT_v0.6.md",
+  "file": "",
+  "old": "",
+  "new": "",
+  "test": "",
+  "status": "not-implemented"
+ }
+]
