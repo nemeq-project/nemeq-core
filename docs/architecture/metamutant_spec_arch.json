@@ -182,5 +182,13 @@
   "old": "        only_fs = all(c[\"check\"] == \"filesystem\" for c in failed)\n        code = EXIT_UNSUPPORTED_FS if only_fs else EXIT_BAD_INVOCATION",
   "new": "        code = EXIT_BAD_INVOCATION",
   "test": "tests/p0/test_unsupported_fs.py::TestRealUnsupportedFs::test_install_code_8_on_unsupported_fs"
+ },
+ {
+  "id": "M-9.8-f",
+  "what": "nfs убран из UNSAFE_FS — реальная NFS принимается",
+  "file": "massaru/install.py",
+  "old": "\"nfs\", \"nfs4\", \"cifs\", \"smb3\", \"overlay\", \"fuse.sshfs\", \"9p\"",
+  "new": "\"nfs4\", \"cifs\", \"smb3\", \"overlay\", \"fuse.sshfs\", \"9p\"",
+  "test": "tests/p0/test_nfs.py::TestRealNfs::test_preflight_refuses_real_nfs"
  }
 ]
